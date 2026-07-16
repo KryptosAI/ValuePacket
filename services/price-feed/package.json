@@ -1,14 +1,14 @@
 {
-  "name": "@williamweishuhn/valuepacket-service-price-feed",
-  "version": "0.1.0",
+  "name": "@valuepacket/service-price-feed",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "start": "tsx --env-file=.env src/server.ts",
     "dev": "tsx watch --env-file=.env src/server.ts"
   },
   "dependencies": {
-    "@williamweishuhn/valuepacket-sdk": "*",
-    "viem": "^2.0.0"
+    "viem": "^2.0.0",
+    "@valuepacket/sdk": "^0.2.0"
   },
   "devDependencies": {
     "tsx": "^4.0.0",

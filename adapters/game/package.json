@@ -1,6 +1,6 @@
 {
-  "name": "@williamweishuhn/valuepacket-adapter-game",
-  "version": "0.1.2",
+  "name": "@valuepacket/adapter-game",
+  "version": "0.2.0",
   "description": "G.A.M.E framework adapter for ValuePacket — add payment channels to your G.A.M.E agents",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -21,7 +21,7 @@
     "src"
   ],
   "dependencies": {
-    "@williamweishuhn/valuepacket-sdk": "^0.1.1"
+    "@valuepacket/sdk": "^0.2.0"
   },
   "license": "MIT",
   "repository": {

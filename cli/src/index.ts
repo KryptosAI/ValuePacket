@@ -103,7 +103,7 @@ const program = new Command();
 program
   .name('valuepacket')
   .description('ValuePacket CLI — the payment protocol for autonomous agents')
-  .version('0.1.0');
+  .version('0.2.2');
 
 // ─── register ──────────────────────────────────────────────
 
@@ -460,7 +460,7 @@ program
       log(`Making ${requestCount} requests to ${endpoint}...`);
 
       const { signPaymentProof, createPaymentProofHeader } = await import(
-        '@williamweishuhn/valuepacket-sdk'
+        '@valuepacket/sdk'
       );
 
       const latencies: number[] = [];
@@ -518,7 +518,7 @@ program
       log('');
       const totalSpent = BigInt(requestCount) * (depositAmount / BigInt(requestCount));
 
-      const { signChannelClose } = await import('@williamweishuhn/valuepacket-sdk');
+      const { signChannelClose } = await import('@valuepacket/sdk');
       const closeSig = await signChannelClose(
         walletClient,
         channelAddress,

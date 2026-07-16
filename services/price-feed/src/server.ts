@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { recoverTypedDataAddress, createPublicClient, http as viemHttp } from 'viem';
-import { PAYMENT_PROOF_TYPE, PAYMENT_CHANNEL_ABI } from '@williamweishuhn/valuepacket-sdk';
+import { PAYMENT_PROOF_TYPE, PAYMENT_CHANNEL_ABI } from '@valuepacket/sdk';
 
 const VERSION = '0.1.0';
 const PORT = parseInt(process.env.PORT || '3000', 10);

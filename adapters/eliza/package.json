@@ -1,6 +1,6 @@
 {
-  "name": "@williamweishuhn/valuepacket-adapter-eliza",
-  "version": "0.1.2",
+  "name": "@valuepacket/adapter-eliza",
+  "version": "0.2.0",
   "description": "ElizaOS plugin adapter for ValuePacket — add payment channels to your ElizaOS agents",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -21,7 +21,7 @@
     "src"
   ],
   "dependencies": {
-    "@williamweishuhn/valuepacket-sdk": "^0.1.1"
+    "@valuepacket/sdk": "^0.2.0"
   },
   "peerDependencies": {
     "@elizaos/core": "^0.25.0"
