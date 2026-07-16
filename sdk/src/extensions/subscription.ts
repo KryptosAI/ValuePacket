@@ -25,12 +25,10 @@ export const SUBSCRIPTION_MANAGER_ABI = [
   },
   {
     type: 'function',
-    name: 'renewSubscription',
+    name: 'renew',
     inputs: [
       { name: 'subscriptionId', type: 'uint256' },
-      { name: 'amountPerPeriod', type: 'uint256' },
-      { name: 'periodDuration', type: 'uint32' },
-      { name: 'maxPeriods', type: 'uint256' },
+      { name: 'spent', type: 'uint256' },
       { name: 'salt', type: 'bytes32' },
       { name: 'signature', type: 'bytes' },
     ],
@@ -466,7 +464,7 @@ export class SubscriptionSession {
    *
    * @returns The transaction hash and the new payment channel ID.
    */
-  async renew(): Promise<{ txHash: `0x${string}`; newChannelId: bigint }> {
+  async renew(spent: bigint = 0n): Promise<{ txHash: `0x${string}`; newChannelId: bigint }> {
     if (!this.payer.account) {
       throw new Error('Payer wallet has no account configured');
     }
@@ -476,12 +474,10 @@ export class SubscriptionSession {
     const { request } = await this.publicClient.simulateContract({
       address: this.subscriptionManagerAddress,
       abi: SUBSCRIPTION_MANAGER_ABI,
-      functionName: 'renewSubscription',
+      functionName: 'renew',
       args: [
         this.subscriptionId,
-        this.amountPerPeriod,
-        this.periodDuration,
-        BigInt(this.maxPeriods),
+        spent,
         computeRenewalSalt(this.subscriptionId, this.completedPeriods + 1),
         signature,
       ],
@@ -503,6 +499,7 @@ export class SubscriptionSession {
       throw new Error('SubscriptionRenewed event not found in transaction receipt');
     }
 
+    this.totalSpent += spent;
     this.completedPeriods += 1;
     this.remainingBalance -= this.amountPerPeriod;
 

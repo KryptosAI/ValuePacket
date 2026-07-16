@@ -1,6 +1,7 @@
 # ValuePacket
 
-![Tests](https://img.shields.io/badge/tests-119%20passing-brightgreen)
+[![CI](https://github.com/KryptosAI/ValuePacket/actions/workflows/ci.yml/badge.svg)](https://github.com/KryptosAI/ValuePacket/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/badge/tests-177%20Solidity%20%2B%20TypeScript%20tests-brightgreen)
 
 **The payment protocol for autonomous agents.**
 
@@ -88,15 +89,12 @@ ValuePacket is deployed on Base Sepolia testnet:
 
 | Contract | Address |
 |---|---|
-| ServiceRegistry | Run `forge script script/DeploySepolia.s.sol --broadcast --rpc-url <BASE_SEPOLIA_RPC>` |
-| PaymentChannel | See `deployments/base-sepolia.json` after deploy |
-| SpendingPolicy | See `deployments/base-sepolia.json` after deploy |
+| ServiceRegistry | `0x32487f8a8B54A8E8efBAb0c72De7b34239952180` |
+| PaymentChannel | `0x9c350ae4D2e8aE380185d3AC95b56fedF98837C3` |
+| SpendingPolicy | `0x4A2921672F22f1CA75EbBce49ce4d38F92Aa4463` |
 | USDC (testnet) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 
-**Prerequisites:**
-1. Get Base Sepolia ETH from [alchemy.com/faucets/base-sepolia](https://www.alchemy.com/faucets/base-sepolia)
-2. Deploy with: `DEPLOYER_PRIVATE_KEY=<key> forge script script/DeploySepolia.s.sol --broadcast --rpc-url https://sepolia.base.org`
-3. Use `npx valuepacket demo --rpc https://sepolia.base.org` to try it
+Try it: `npx valuepacket demo --rpc https://sepolia.base.org`
 
 ## Services
 
@@ -120,10 +118,10 @@ ValuePacket is deployed on Base Sepolia testnet:
 ## Build & test
 
 ```bash
-# Solidity contracts (92 tests)
+# Solidity contracts (177 tests)
 cd contracts && forge test
 
-# TypeScript (27 tests)
+# TypeScript
 cd cli && npm test
 
 # Everything at once
@@ -152,17 +150,12 @@ forge verify-contract <address> src/ServiceRegistry.sol:ServiceRegistry --verifi
 - Get Base Sepolia USDC from [Circle Faucet](https://faucet.circle.com)
 - Set `DEPLOYER_PRIVATE_KEY` in `contracts/.env`
 
-### Base Sepolia Deployments
+## For maintainers
 
-| Contract | Address |
-|---|---|
-| ServiceRegistry | `0x32487f8a8B54A8E8efBAb0c72De7b34239952180` |
-| PaymentChannel | `0x9c350ae4D2e8aE380185d3AC95b56fedF98837C3` |
-| SpendingPolicy | `0x4A2921672F22f1CA75EbBce49ce4d38F92Aa4463` |
-| USDC (official) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
-| Chain ID | 84532 |
-
-Deployer: `0x9bAF5bDbE827ea13e85630DA9daAdEf016dFc89B`
+After pushing, set these in GitHub repo Settings:
+- Topics: ai-agents, payment-channels, ethereum, solidity, web3, micropayments, elizaos, agent-economy, stablecoin, base
+- Social preview: upload a 1280x640 image
+- Website: https://valuepacket.dev (when deployed)
 
 ## License
 

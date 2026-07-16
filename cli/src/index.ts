@@ -10,14 +10,18 @@ import {
   type Hash,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { SubscriptionSession } from '@valuepacket/sdk';
+import {
+  AgentPay,
+  ChannelSession,
+  SubscriptionSession,
+  SERVICE_REGISTRY_ABI,
+  PAYMENT_CHANNEL_ABI,
+} from '@valuepacket/sdk';
 
 import { log, formatAddress, formatUsdc, usdcToWei, weiToUsdc, truncate, ZERO_ADDRESS } from './utils.js';
 import { runDemo, type DemoConfig } from './demo.js';
 import { startServer } from './server.js';
 import {
-  serviceRegistryAbi,
-  paymentChannelAbi,
   erc20Abi,
   USDC_BASE_SEPOLIA,
   SERVICE_REGISTRY_ADDRESS_DEFAULT,
@@ -181,7 +185,7 @@ program
 
       const hash = await walletClient.writeContract({
         address: registry as Address,
-        abi: serviceRegistryAbi,
+        abi: SERVICE_REGISTRY_ABI,
         functionName: 'register',
         args: [metadataURI, priceWei, maxMs],
         chain,
@@ -239,7 +243,7 @@ program
 
       const count = (await publicClient.readContract({
         address: registry as Address,
-        abi: serviceRegistryAbi,
+        abi: SERVICE_REGISTRY_ABI,
         functionName: 'getServiceCount',
       })) as unknown as bigint;
 
@@ -261,7 +265,7 @@ program
       for (let i = 0; i < countNum; i++) {
         const [sId, svc] = (await publicClient.readContract({
           address: registry as Address,
-          abi: serviceRegistryAbi,
+          abi: SERVICE_REGISTRY_ABI,
           functionName: 'getServiceAtIndex',
           args: [BigInt(i)],
         })) as unknown as [string, ServiceFromChain];
@@ -610,10 +614,10 @@ subscriptionsCmd
         tokenAddress,
       });
 
-      const result = await session.renewSubscription(id);
+      const result = await session.renew(id);
 
       log(`✓ Subscription #${subscriptionId} renewed.`);
-      log(`  Channel: #${result.channelId}`);
+      log(`  Channel: #${result.newChannelId}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log(`✗ Renew failed: ${msg}`);

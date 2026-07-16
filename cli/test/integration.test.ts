@@ -23,8 +23,10 @@ import {
   createPaymentProofHeader,
   CHANNEL_CLOSE_TYPE,
   PAYMENT_PROOF_TYPE,
+  SERVICE_REGISTRY_ABI,
+  PAYMENT_CHANNEL_ABI,
 } from '@valuepacket/sdk';
-import { serviceRegistryAbi, paymentChannelAbi, erc20Abi } from '../src/contracts.js';
+import { erc20Abi } from '../src/contracts.js';
 import { usdcToWei, ZERO_ADDRESS } from '../src/utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -125,7 +127,7 @@ let deployerWallet: WalletClient;
 describe('Integration: Full Local Demo Flow', () => {
   beforeAll(async () => {
     // ── Step 0: Kill any stale anvil from previous runs ───────────
-    execSync('pkill -f anvil 2>/dev/null || true');
+    execSync('lsof -ti tcp:8545 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
     await new Promise((r) => setTimeout(r, 2000));
 
     // ── Step 1: Start anvil ────────────────────────────────────────
@@ -338,7 +340,7 @@ describe('Integration: Full Local Demo Flow', () => {
 
     const hash = await providerWallet.writeContract({
       address: registryAddress,
-      abi: serviceRegistryAbi,
+      abi: SERVICE_REGISTRY_ABI,
       functionName: 'register',
       args: [metadataURI, pricePerRequest, maxResponseMs],
     });
@@ -356,7 +358,7 @@ describe('Integration: Full Local Demo Flow', () => {
     // Read back the service from the registry
     const service = (await publicClient.readContract({
       address: registryAddress,
-      abi: serviceRegistryAbi,
+      abi: SERVICE_REGISTRY_ABI,
       functionName: 'getService',
       args: [serviceId],
     })) as unknown as {
@@ -376,7 +378,7 @@ describe('Integration: Full Local Demo Flow', () => {
     // Verify service count
     const count = (await publicClient.readContract({
       address: registryAddress,
-      abi: serviceRegistryAbi,
+      abi: SERVICE_REGISTRY_ABI,
       functionName: 'getServiceCount',
     })) as unknown as bigint;
 
@@ -458,7 +460,7 @@ describe('Integration: Full Local Demo Flow', () => {
 
     const openHash = await payerWallet.writeContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'openChannel',
       args: [providerAccount.address, usdcAddress, depositAmount, expiresAt, ZERO_ADDRESS, '0x'],
     });
@@ -484,7 +486,7 @@ describe('Integration: Full Local Demo Flow', () => {
     // Read on-chain channel state
     const channel = (await publicClient.readContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'getChannel',
       args: [channelId],
     })) as unknown as {
@@ -537,7 +539,7 @@ describe('Integration: Full Local Demo Flow', () => {
     // Payee submits closeChannel on-chain
     const closeHash = await providerWallet.writeContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'closeChannel',
       args: [channelId, spentAmount, closeSig],
     });
@@ -547,7 +549,7 @@ describe('Integration: Full Local Demo Flow', () => {
     // Verify channel is now settled on-chain
     const closedChannel = (await publicClient.readContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'getChannel',
       args: [channelId],
     })) as unknown as {
@@ -617,7 +619,7 @@ describe('Integration: Full Local Demo Flow', () => {
 
     const openHash = await payerWallet.writeContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'openChannel',
       args: [
         providerAccount.address,
@@ -712,7 +714,7 @@ describe('Integration: Full Local Demo Flow', () => {
 
     const closeHash = await providerWallet.writeContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'closeChannel',
       args: [cid, pricePerRequest, closeSig],
     });
@@ -721,7 +723,7 @@ describe('Integration: Full Local Demo Flow', () => {
     // Verify final on-chain state
     const closedChannel = (await publicClient.readContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'getChannel',
       args: [cid],
     })) as unknown as {

@@ -1,5 +1,5 @@
 {
-  "name": "@williamweishuhn/valuepacket-indexer",
+  "name": "@valuepacket/indexer",
   "version": "1.0.0",
   "private": true,
   "type": "module",

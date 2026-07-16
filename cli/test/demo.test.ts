@@ -120,6 +120,7 @@ describe('Demo', () => {
       rpcUrl: 'http://localhost:8545',
       registryAddress: '0xdddddddddddddddddddddddddddddddddddddddd',
       channelAddress: '0xcccccccccccccccccccccccccccccccccccccccc',
+      port: 0,
     });
 
     expect(result).toBeDefined();
@@ -145,6 +146,7 @@ describe('Demo', () => {
       rpcUrl: 'http://localhost:8545',
       registryAddress: '0xdddddddddddddddddddddddddddddddddddddddd',
       channelAddress: '0xcccccccccccccccccccccccccccccccccccccccc',
+      port: 0,
     });
 
     expect(result.serviceId).toMatch(/^0x[a-fA-F0-9]{64}$/);
@@ -157,6 +159,7 @@ describe('Demo', () => {
       rpcUrl: 'http://localhost:8545',
       registryAddress: '0xdddddddddddddddddddddddddddddddddddddddd',
       channelAddress: '0xcccccccccccccccccccccccccccccccccccccccc',
+      port: 0,
     });
 
     expect(result.requestCount).toBe(10);

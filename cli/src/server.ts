@@ -2,7 +2,7 @@ import * as http from 'node:http';
 import type { Address, PublicClient } from 'viem';
 import { verifyTypedData } from 'viem';
 import { log, formatAddress, weiToUsdc } from './utils.js';
-import { serviceRegistryAbi, paymentChannelAbi } from './contracts.js';
+import { SERVICE_REGISTRY_ABI, PAYMENT_CHANNEL_ABI } from '@valuepacket/sdk';
 
 const PAYMENT_PROOF_TYPE = {
   PaymentProof: [
@@ -121,7 +121,7 @@ async function getPayerFromChannel(
   try {
     const channelData = await publicClient.readContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'getChannel',
       args: [channelId],
     });
@@ -167,7 +167,7 @@ export async function startServer(config: ServerConfig): Promise<ChannelServer> 
     try {
       const serviceRecord = (await publicClient.readContract({
         address: registryAddress,
-        abi: serviceRegistryAbi,
+        abi: SERVICE_REGISTRY_ABI,
         functionName: 'getService',
         args: [serviceId],
       })) as unknown as ServiceRecord;

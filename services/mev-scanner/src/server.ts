@@ -129,6 +129,7 @@ interface Opportunity {
   sellPrice: string;
   spreadPct: number;
   estimatedProfit: string;
+  liquidityUSD: number;
 }
 
 interface ScanResponse {
@@ -268,6 +269,7 @@ function computeOpportunities(
         sellPrice: sellPrice.toFixed(2),
         spreadPct: Math.round(spreadPct * 1000) / 1000,
         estimatedProfit: profit.toFixed(2),
+        liquidityUSD: buy.liquidity.usd,
       });
     }
   }

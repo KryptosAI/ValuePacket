@@ -26,10 +26,12 @@ import {
   CHANNEL_CLOSE_TYPE,
   PAYMENT_PROOF_TYPE,
   ChannelStatus,
+  SERVICE_REGISTRY_ABI,
+  PAYMENT_CHANNEL_ABI,
 } from '@valuepacket/sdk';
 import { createAgentSettlementPlugin } from '../../adapters/eliza/src/index.js';
 import { AgentSettlementWorker } from '../../adapters/game/src/index.js';
-import { serviceRegistryAbi, paymentChannelAbi, erc20Abi } from '../src/contracts.js';
+import { erc20Abi } from '../src/contracts.js';
 import { usdcToWei, ZERO_ADDRESS } from '../src/utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -209,7 +211,7 @@ async function getOnChainChannel(
 ): Promise<OnChainChannel> {
   return (await publicClient.readContract({
     address: channelAddress,
-    abi: paymentChannelAbi,
+    abi: PAYMENT_CHANNEL_ABI,
     functionName: 'getChannel',
     args: [channelId],
   })) as unknown as OnChainChannel;
@@ -230,7 +232,7 @@ async function submitCloseViaPayee(
   const closeSig = await signChannelClose(payerWallet, verifyingContract, channelId, spent);
   const hash = await payeeWallet.writeContract({
     address: verifyingContract,
-    abi: paymentChannelAbi,
+    abi: PAYMENT_CHANNEL_ABI,
     functionName: 'closeChannel',
     args: [channelId, spent, closeSig],
     chain: anvilChain,
@@ -255,7 +257,7 @@ const USDC_AMOUNT = usdcToWei(500); // $500 USDC
 describe('Cross-Framework Integration: ElizaOS ↔ G.A.M.E ↔ Raw SDK', () => {
   beforeAll(async () => {
     // ── Kill stale anvil from previous runs ─────────────────────────
-    execSync('pkill -f anvil 2>/dev/null || true');
+    execSync('lsof -ti tcp:8545 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
     await new Promise((r) => setTimeout(r, 2000));
 
     // ── Start anvil ────────────────────────────────────────────────
@@ -414,7 +416,7 @@ describe('Cross-Framework Integration: ElizaOS ↔ G.A.M.E ↔ Raw SDK', () => {
     // Verify on-chain: service registered by ElizaOS (#1)
     const service = (await publicClient.readContract({
       address: registryAddress,
-      abi: serviceRegistryAbi,
+      abi: SERVICE_REGISTRY_ABI,
       functionName: 'getService',
       args: [serviceId as `0x${string}`],
     })) as unknown as {
@@ -602,7 +604,7 @@ describe('Cross-Framework Integration: ElizaOS ↔ G.A.M.E ↔ Raw SDK', () => {
     // Verify on-chain
     const svc2 = (await publicClient.readContract({
       address: registryAddress,
-      abi: serviceRegistryAbi,
+      abi: SERVICE_REGISTRY_ABI,
       functionName: 'getService',
       args: [serviceId2 as `0x${string}`],
     })) as unknown as { provider: Address; active: boolean; pricePerRequest: bigint };
@@ -733,7 +735,7 @@ describe('Cross-Framework Integration: ElizaOS ↔ G.A.M.E ↔ Raw SDK', () => {
     // Verify on-chain: registered by G.A.M.E (#2)
     const gameService = (await publicClient.readContract({
       address: registryAddress,
-      abi: serviceRegistryAbi,
+      abi: SERVICE_REGISTRY_ABI,
       functionName: 'getService',
       args: [gameServiceId as `0x${string}`],
     })) as unknown as { provider: Address; active: boolean; pricePerRequest: bigint };

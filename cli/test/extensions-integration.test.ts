@@ -21,8 +21,9 @@ import { privateKeyToAccount } from 'viem/accounts';
 import {
   signChannelClose,
   CHANNEL_CLOSE_TYPE,
+  PAYMENT_CHANNEL_ABI,
 } from '@valuepacket/sdk';
-import { paymentChannelAbi, erc20Abi } from '../src/contracts.js';
+import { erc20Abi } from '../src/contracts.js';
 import { usdcToWei, ZERO_ADDRESS } from '../src/utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -366,7 +367,7 @@ async function getOnChainChannel(
 ): Promise<OnChainChannel> {
   return (await pc.readContract({
     address: chAddr,
-    abi: paymentChannelAbi,
+    abi: PAYMENT_CHANNEL_ABI,
     functionName: 'getChannel',
     args: [channelId],
   })) as unknown as OnChainChannel;
@@ -390,7 +391,7 @@ async function openAndCloseChannel(
 
   const openHash = await payerWallet.writeContract({
     address: chAddr,
-    abi: paymentChannelAbi,
+    abi: PAYMENT_CHANNEL_ABI,
     functionName: 'openChannel',
     args: [payeeAddress, tokenAddress, depositAmount, expiresAt, ZERO_ADDRESS, '0x'],
   });
@@ -414,7 +415,7 @@ async function openAndCloseChannel(
 
   const closeHash = await payeeWallet.writeContract({
     address: chAddr,
-    abi: paymentChannelAbi,
+    abi: PAYMENT_CHANNEL_ABI,
     functionName: 'closeChannel',
     args: [channelId, spentAmount, closeSig],
   });
@@ -448,7 +449,7 @@ const USDC_FUND = usdcToWei(1000); // $1000 USDC per account
 describe('ValuePacket Extensions Integration', () => {
   beforeAll(async () => {
     // ── Kill stale anvil from previous runs ────────────────────────
-    execSync('pkill -f anvil 2>/dev/null || true');
+    execSync('lsof -ti tcp:8545 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
     await new Promise((r) => setTimeout(r, 2000));
 
     // ── Start anvil ──────────────────────────────────────────────────

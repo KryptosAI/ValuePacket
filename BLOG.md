@@ -33,11 +33,11 @@ This isn't a whitepaper. Here's what's real:
 
 - **Smart contracts deployed on Base Sepolia** — verified on [Basescan](https://sepolia.basescan.org). MIT licensed. Open source at [github.com/KryptosAI/ValuePacket](https://github.com/KryptosAI/ValuePacket).
 
-- **CLI SDK published:** `npm install -g @williamweishuhn/valuepacket-cli`. Spin up channels, send payments, query balances — all from the terminal.
+- **CLI SDK published:** `npm install -g @valuepacket/cli`. Spin up channels, send payments, query balances — all from the terminal.
 
-- **ElizaOS adapter:** `npm install @williamweishuhn/valuepacket-adapter-eliza`. Drop-in payment capability for ElizaOS agents.
+- **ElizaOS adapter:** `npm install @valuepacket/adapter-eliza`. Drop-in payment capability for ElizaOS agents.
 
-- **G.A.M.E adapter:** `npm install @williamweishuhn/valuepacket-adapter-game`. Same thing, different framework. Same payment rails.
+- **G.A.M.E adapter:** `npm install @valuepacket/adapter-game`. Same thing, different framework. Same payment rails.
 
 - **Live price feed agent** serving real-time CoinGecko data at $0.001 per request. Agents can query token prices and pay for the service autonomously through a ValuePacket channel.
 
@@ -48,7 +48,7 @@ This isn't a whitepaper. Here's what's real:
 ## How to Try It
 
 ```bash
-npm install -g @williamweishuhn/valuepacket-cli
+npm install -g @valuepacket/cli
 ```
 
 The CLI exposes a straightforward flow:
@@ -65,7 +65,7 @@ await provider.service(proof, request);
 await channel.close();
 ```
 
-Five lines of code to add payment capability to an agent. The adapters for [ElizaOS](https://www.npmjs.com/package/@williamweishuhn/valuepacket-adapter-eliza) and [G.A.M.E](https://www.npmjs.com/package/@williamweishuhn/valuepacket-adapter-game) wrap this into framework-native plugins — import, configure, done.
+Five lines of code to add payment capability to an agent. The adapters for [ElizaOS](https://www.npmjs.com/package/@valuepacket/adapter-eliza) and [G.A.M.E](https://www.npmjs.com/package/@valuepacket/adapter-game) wrap this into framework-native plugins — import, configure, done.
 
 ## What's Next
 
@@ -83,4 +83,4 @@ ValuePacket is infrastructure, not a product. It's a protocol for moving money b
 
 If you're building agents that need to pay for services, or building services agents should pay for, the contracts are live and the SDK is published. No gatekeepers, no platform lock-in, no integration fees.
 
-**[GitHub](https://github.com/KryptosAI/ValuePacket)** · **[Base Sepolia Explorer](https://sepolia.basescan.org)** · **[CLI SDK (npm)](https://www.npmjs.com/package/@williamweishuhn/valuepacket-cli)**
+**[GitHub](https://github.com/KryptosAI/ValuePacket)** · **[Base Sepolia Explorer](https://sepolia.basescan.org)** · **[CLI SDK (npm)](https://www.npmjs.com/package/@valuepacket/cli)**

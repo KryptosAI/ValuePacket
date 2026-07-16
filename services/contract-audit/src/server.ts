@@ -130,10 +130,10 @@ function getCurrentTimestamp(): string {
 }
 
 const severityScore: Record<string, number> = {
-  high: 4,
+  high: 3,
   medium: 2,
   low: 1,
-  info: 0,
+  info: 0.5,
 };
 
 function calculateRiskScore(findings: Finding[]): number {
@@ -245,6 +245,20 @@ async function fetchSourceCode(chainId: number, address: string): Promise<string
   }
 }
 
+function hasStateChangingFunctions(source: string): boolean {
+  const funcPattern = /\bfunction\s+\w+\s*\([^)]*\)\s*([\s\S]*?)\{/g;
+  let match: RegExpExecArray | null;
+  while ((match = funcPattern.exec(source)) !== null) {
+    const signature = match[0];
+    if (/\bexternal\b/.test(signature) || /\bpublic\b/.test(signature)) {
+      if (!/\bview\b/.test(signature) && !/\bpure\b/.test(signature)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function analyzeSolidity(source: string): Finding[] {
   const findings: Finding[] = [];
 
@@ -264,6 +278,14 @@ function analyzeSolidity(source: string): Finding[] {
     });
   }
 
+  if (source.includes('call{value:') || source.includes('call{ value:')) {
+    findings.push({
+      severity: 'high',
+      description: 'Contains low-level call with value — potentially unchecked external call that could drain funds',
+      line: findLine(source, 'call{'),
+    });
+  }
+
   if (source.includes('delegatecall')) {
     findings.push({
       severity: 'medium',
@@ -277,6 +299,22 @@ function analyzeSolidity(source: string): Finding[] {
       severity: 'medium',
       description: 'Accepts arbitrary bytes calldata in external function — could enable unauthorized calls',
       line: findLine(source, 'bytes calldata'),
+    });
+  }
+
+  if (source.includes('assembly')) {
+    findings.push({
+      severity: 'medium',
+      description: 'Contains inline assembly block — bypasses Solidity safety checks and type system',
+      line: findLine(source, 'assembly'),
+    });
+  }
+
+  if (!source.includes('nonReentrant') && hasStateChangingFunctions(source)) {
+    findings.push({
+      severity: 'medium',
+      description: 'Missing nonReentrant modifier on state-changing external/public functions — vulnerable to reentrancy attacks',
+      line: 0,
     });
   }
 

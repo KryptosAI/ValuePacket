@@ -1,32 +1,25 @@
 import type { Address, Hash, PublicClient, WalletClient } from 'viem';
 import { createPublicClient, createWalletClient, http, parseEther, keccak256, toHex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { signChannelClose, signPaymentProof, hashRequest, createPaymentProofHeader } from '@valuepacket/sdk';
+import {
+  signChannelClose,
+  signPaymentProof,
+  hashRequest,
+  createPaymentProofHeader,
+  SERVICE_REGISTRY_ABI,
+  PAYMENT_CHANNEL_ABI,
+} from '@valuepacket/sdk';
 
 import { log, formatAddress, formatUsdc, usdcToWei, weiToUsdc, ZERO_ADDRESS } from './utils.js';
 import { startServer, type ChannelServer } from './server.js';
 import {
-  serviceRegistryAbi,
-  paymentChannelAbi,
   erc20Abi,
+  mintAbi,
   USDC_BASE_SEPOLIA,
 } from './contracts.js';
 
 const ANVIL_DEPLOYER_PK = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
 const MINT_AMOUNT = usdcToWei(1000);
-
-const mintAbi = [
-  {
-    type: 'function',
-    name: 'mint',
-    inputs: [
-      { name: 'to', type: 'address' },
-      { name: 'amount', type: 'uint256' },
-    ],
-    outputs: [],
-    stateMutability: 'nonpayable',
-  },
-] as const;
 
 export interface DemoConfig {
   rpcUrl: string;
@@ -34,6 +27,7 @@ export interface DemoConfig {
   channelAddress: Address;
   tokenAddress?: Address;
   chainId?: number;
+  port?: number;
   mint?: boolean;
   deployerPrivateKey?: string;
 }
@@ -394,7 +388,7 @@ export async function runDemo(config: DemoConfig): Promise<DemoResult> {
 
     const hash = await providerWallet.writeContract({
       address: registryAddress,
-      abi: serviceRegistryAbi,
+      abi: SERVICE_REGISTRY_ABI,
       functionName: 'register',
       args: [metadataURI, pricePerRequest, maxResponseMs],
       chain: providerWallet.chain,
@@ -427,7 +421,9 @@ export async function runDemo(config: DemoConfig): Promise<DemoResult> {
 
   // Step 5: Start provider server
   let port = 0;
-  const serverPorts = [3456, 3457, 3458, 3459, 3460, 3461, 3462, 3463, 3464, 3465];
+  const serverPorts = config.port !== undefined
+    ? [config.port, ...(config.port === 0 ? [] : [3456, 3457, 3458, 3459, 3460, 3461, 3462, 3463, 3464, 3465])]
+    : [3456, 3457, 3458, 3459, 3460, 3461, 3462, 3463, 3464, 3465];
   for (const p of serverPorts) {
     try {
       const srv = await startServer({
@@ -439,7 +435,7 @@ export async function runDemo(config: DemoConfig): Promise<DemoResult> {
         registryAddress,
       });
       server = srv;
-      port = p;
+      port = srv.port;
       break;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -491,7 +487,7 @@ export async function runDemo(config: DemoConfig): Promise<DemoResult> {
 
     const hash = await payerWallet.writeContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'openChannel',
       args: [providerAccount.address, tokenAddress, depositAmount, expiresAt, ZERO_ADDRESS, '0x'],
       chain: payerWallet.chain,
@@ -517,7 +513,7 @@ export async function runDemo(config: DemoConfig): Promise<DemoResult> {
 
     const channelData = (await payerPublicClient.readContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'getChannel',
       args: [channelId],
     })) as unknown as ChannelFromChain;
@@ -636,7 +632,7 @@ export async function runDemo(config: DemoConfig): Promise<DemoResult> {
 
     const hash = await providerWallet.writeContract({
       address: channelAddress,
-      abi: paymentChannelAbi,
+      abi: PAYMENT_CHANNEL_ABI,
       functionName: 'closeChannel',
       args: [channelId, totalSpent, closeSig],
       chain: providerWallet.chain,

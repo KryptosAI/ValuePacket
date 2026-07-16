@@ -8,6 +8,7 @@ CLI_DIR="$ROOT_DIR/cli"
 DEPLOYMENTS_FILE="$CONTRACTS_DIR/deployments/local.json"
 ANVIL_PORT=8545
 ANVIL_PID=""
+SKIP_ANVIL_START=false
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -15,7 +16,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 cleanup() {
-  if [ -n "$ANVIL_PID" ] && kill -0 "$ANVIL_PID" 2>/dev/null; then
+  if [ "$SKIP_ANVIL_START" = false ] && [ -n "$ANVIL_PID" ] && kill -0 "$ANVIL_PID" 2>/dev/null; then
     echo ""
     echo -e "${YELLOW}[cleanup] Killing anvil (PID $ANVIL_PID)...${NC}"
     kill "$ANVIL_PID" 2>/dev/null || true
@@ -29,42 +30,56 @@ echo "  ValuePacket Protocol — Local Demo"
 echo "============================================"
 echo ""
 
-# ── Step 1: Kill any existing anvil on port 8545 ──────────────────────
-echo -e "${YELLOW}[1/9] Stopping any existing anvil on port $ANVIL_PORT...${NC}"
-EXISTING_PID=$(lsof -ti tcp:"$ANVIL_PORT" 2>/dev/null || true)
-if [ -n "$EXISTING_PID" ]; then
-  echo "  Killing PID $EXISTING_PID"
-  kill "$EXISTING_PID" 2>/dev/null || true
-  sleep 1
+# ── Step 1: Check for existing anvil ──────────────────────────────────
+echo -e "${YELLOW}[1/9] Checking for existing anvil on port $ANVIL_PORT...${NC}"
+SKIP_ANVIL_START=false
+if curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+  "http://localhost:$ANVIL_PORT" 2>/dev/null | grep -q '31337'; then
+  echo -e "${GREEN}  Reusing existing anvil on port $ANVIL_PORT (chain 31337)${NC}"
+  SKIP_ANVIL_START=true
+elif lsof -ti "tcp:$ANVIL_PORT" >/dev/null 2>&1; then
+  echo -e "${RED}  Port $ANVIL_PORT is in use by a non-anvil process. Aborting.${NC}"
+  exit 1
+else
+  echo "  No existing anvil found, will start a new one."
 fi
 echo -e "${GREEN}  Done${NC}"
 
-# ── Step 2: Start anvil ───────────────────────────────────────────────
-echo -e "${YELLOW}[2/9] Starting anvil in background...${NC}"
-anvil --host 0.0.0.0 --port "$ANVIL_PORT" --chain-id 31337 > /tmp/anvil-local.log 2>&1 &
-ANVIL_PID=$!
-echo "  anvil PID: $ANVIL_PID"
+# ── Step 2: Start anvil (if needed) ───────────────────────────────────
+if [ "$SKIP_ANVIL_START" = false ]; then
+  echo -e "${YELLOW}[2/9] Starting anvil in background...${NC}"
+  anvil --host 0.0.0.0 --port "$ANVIL_PORT" --chain-id 31337 > /tmp/anvil-local.log 2>&1 &
+  ANVIL_PID=$!
+  echo "  anvil PID: $ANVIL_PID"
+else
+  echo -e "${YELLOW}[2/9] Using existing anvil (skipping start)${NC}"
+fi
 
 # ── Step 3: Wait for anvil to be ready ────────────────────────────────
-echo -e "${YELLOW}[3/9] Waiting for anvil to be ready...${NC}"
-MAX_RETRIES=30
-RETRY=0
-while [ $RETRY -lt $MAX_RETRIES ]; do
-  if curl -s "http://localhost:$ANVIL_PORT" \
-       -X POST \
-       -H 'Content-Type: application/json' \
-       -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
-       2>/dev/null | grep -q '"result"'; then
-    echo -e "${GREEN}  anvil is ready${NC}"
-    break
-  fi
-  RETRY=$((RETRY + 1))
-  sleep 1
-done
+if [ "$SKIP_ANVIL_START" = false ]; then
+  echo -e "${YELLOW}[3/9] Waiting for anvil to be ready...${NC}"
+  MAX_RETRIES=30
+  RETRY=0
+  while [ $RETRY -lt $MAX_RETRIES ]; do
+    if curl -s "http://localhost:$ANVIL_PORT" \
+         -X POST \
+         -H 'Content-Type: application/json' \
+         -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+         2>/dev/null | grep -q '"result"'; then
+      echo -e "${GREEN}  anvil is ready${NC}"
+      break
+    fi
+    RETRY=$((RETRY + 1))
+    sleep 1
+  done
 
-if [ $RETRY -eq $MAX_RETRIES ]; then
-  echo -e "${RED}  anvil failed to start within ${MAX_RETRIES}s${NC}"
-  exit 1
+  if [ $RETRY -eq $MAX_RETRIES ]; then
+    echo -e "${RED}  anvil failed to start within ${MAX_RETRIES}s${NC}"
+    exit 1
+  fi
+else
+  echo -e "${YELLOW}[3/9] anvil already running (skipping wait)${NC}"
 fi
 
 # ── Step 4: Deploy contracts ──────────────────────────────────────────
@@ -237,10 +252,12 @@ fi
 # ── Step 9: Cleanup ───────────────────────────────────────────────────
 echo ""
 echo -e "${YELLOW}[9/9] Cleaning up...${NC}"
-if [ -n "$ANVIL_PID" ] && kill -0 "$ANVIL_PID" 2>/dev/null; then
+if [ "$SKIP_ANVIL_START" = false ] && [ -n "$ANVIL_PID" ] && kill -0 "$ANVIL_PID" 2>/dev/null; then
   kill "$ANVIL_PID" 2>/dev/null || true
   wait "$ANVIL_PID" 2>/dev/null || true
   echo "  anvil stopped"
+else
+  echo "  Leaving existing anvil running"
 fi
 
 # ── Summary ────────────────────────────────────────────────────────────
