@@ -11,14 +11,15 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
-  AgentPay,
   ChannelSession,
   SubscriptionSession,
   SERVICE_REGISTRY_ABI,
   PAYMENT_CHANNEL_ABI,
+  rateService,
+  getProviderScore,
 } from '@valuepacket/sdk';
 
-import { log, formatAddress, formatUsdc, usdcToWei, weiToUsdc, truncate, ZERO_ADDRESS } from './utils.js';
+import { log, formatAddress, formatUsdc, usdcToWei, weiToUsdc, ZERO_ADDRESS } from './utils.js';
 import { runDemo, type DemoConfig } from './demo.js';
 import { startServer } from './server.js';
 import {
@@ -922,6 +923,377 @@ program
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log(`✗ Balance check failed: ${msg}`);
+      process.exit(1);
+    }
+  });
+
+// ─── close-channel ─────────────────────────────────────────
+
+program
+  .command('close-channel <channelId>')
+  .description('Close a payment channel and settle funds')
+  .option('--spent <amount>', 'Cumulative amount to settle (USDC)')
+  .option('--rpc <url>', 'RPC URL', process.env.RPC_URL || 'https://sepolia.base.org')
+  .option('--private-key <key>', 'Agent private key (0x-prefixed)', process.env.AGENT_PRIVATE_KEY)
+  .option(
+    '--channels <address>',
+    'PaymentChannel contract address',
+    process.env.PAYMENT_CHANNEL_ADDRESS,
+  )
+  .action(async (channelId: string, options) => {
+    const { spent: spentOpt, rpc, privateKey, channels } = options;
+
+    if (!privateKey) {
+      log('✗ Error: --private-key is required. Set AGENT_PRIVATE_KEY env variable or pass --private-key.');
+      process.exit(1);
+    }
+    if (!channels || channels === PAYMENT_CHANNEL_ADDRESS_DEFAULT) {
+      log('✗ Error: --channels is required. Set PAYMENT_CHANNEL_ADDRESS env variable or pass --channels.');
+      process.exit(1);
+    }
+
+    const key = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
+    const chId = BigInt(channelId);
+
+    try {
+      const account = privateKeyToAccount(key as Hash);
+      const chain = getChain(rpc);
+      const publicClient = createPublicClient({ chain, transport: http(rpc) });
+      const walletClient = createWalletClient({ chain, transport: http(rpc), account });
+
+      const channelResult = await publicClient.readContract({
+        address: channels as Address,
+        abi: PAYMENT_CHANNEL_ABI,
+        functionName: 'getChannel',
+        args: [chId],
+      });
+
+      const channel = channelResult as unknown as ChannelFromChain;
+
+      if (channel.status !== 0) {
+        log(`✗ Error: Channel #${channelId} is already closed.`);
+        process.exit(1);
+      }
+
+      if (channel.payer.toLowerCase() !== account.address.toLowerCase()) {
+        log('✗ Error: Only the payer can close the channel.');
+        process.exit(1);
+      }
+
+      const spent = spentOpt !== undefined ? usdcToWei(Number(spentOpt)) : channel.spent;
+
+      log(`Closing channel #${channelId}...`);
+      log(`  Spent:    ${formatUsdc(spent)}`);
+      log(`  Deposit:  ${formatUsdc(channel.deposit)}`);
+
+      const session = new ChannelSession({
+        channelId: chId,
+        payer: walletClient,
+        publicClient,
+        payeeEndpoint: '',
+        pricePerRequest: 0n,
+        token: channel.token,
+        deposit: channel.deposit,
+        verifyingContract: channels as Address,
+        paymentChannelAddress: channels as Address,
+      });
+
+      session.setState(spent, 0n);
+
+      const result = await session.closeAsPayer();
+
+      log(`✓ Channel #${channelId} closed.`);
+      log(`  Tx:       ${result.txHash}`);
+      log(`  Refunded: ${formatUsdc(result.refunded)}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`✗ Close failed: ${msg}`);
+      process.exit(1);
+    }
+  });
+
+// ─── channel ───────────────────────────────────────────────
+
+program
+  .command('channel <channelId>')
+  .description('Show detailed info about a payment channel')
+  .option('--rpc <url>', 'RPC URL', process.env.RPC_URL || 'https://sepolia.base.org')
+  .option(
+    '--channels <address>',
+    'PaymentChannel contract address',
+    process.env.PAYMENT_CHANNEL_ADDRESS,
+  )
+  .option('--token <address>', 'USDC token address', process.env.USDC_TOKEN_ADDRESS || USDC_BASE_SEPOLIA)
+  .action(async (channelId: string, options) => {
+    const { rpc, channels, token } = options;
+
+    if (!channels || channels === PAYMENT_CHANNEL_ADDRESS_DEFAULT) {
+      log('✗ Error: --channels is required. Set PAYMENT_CHANNEL_ADDRESS env variable or pass --channels.');
+      process.exit(1);
+    }
+
+    const chId = BigInt(channelId);
+
+    try {
+      const chain = getChain(rpc);
+      const publicClient = createPublicClient({ chain, transport: http(rpc) });
+
+      const channelResult = await publicClient.readContract({
+        address: channels as Address,
+        abi: PAYMENT_CHANNEL_ABI,
+        functionName: 'getChannel',
+        args: [chId],
+      });
+
+      const channel = channelResult as unknown as ChannelFromChain;
+
+      if (channel.payer === ZERO_ADDRESS) {
+        log(`✗ Error: Channel #${channelId} not found.`);
+        process.exit(1);
+      }
+
+      let tokenSymbol = '';
+      try {
+        const symbolResult = await publicClient.readContract({
+          address: channel.token,
+          abi: erc20Abi,
+          functionName: 'symbol',
+        });
+        tokenSymbol = symbolResult as unknown as string;
+      } catch {
+        tokenSymbol = 'USDC';
+      }
+
+      const remaining = channel.deposit - channel.spent;
+      const statusMap = ['Open', 'Settled', 'Refunded'];
+      const statusLabel = statusMap[channel.status] ?? 'Unknown';
+
+      const openedDate = new Date(channel.openedAt * 1000).toISOString().replace('T', ' ').slice(0, 19);
+      const expiresDate = new Date(channel.expiresAt * 1000).toISOString().replace('T', ' ').slice(0, 19);
+
+      log('');
+      log(`Channel #${channelId}:`);
+      log(`  Payer:     ${channel.payer}`);
+      log(`  Payee:     ${channel.payee}`);
+      log(`  Token:     ${tokenSymbol} (${channel.token})`);
+      log(`  Deposit:   ${formatUsdc(channel.deposit)}`);
+      log(`  Spent:     ${formatUsdc(channel.spent)}`);
+      log(`  Opened:    ${openedDate}`);
+      log(`  Expires:   ${expiresDate}`);
+      log(`  Status:    ${statusLabel}`);
+      log(`  Remaining: ${formatUsdc(remaining)}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`✗ Query failed: ${msg}`);
+      process.exit(1);
+    }
+  });
+
+// ─── channels ──────────────────────────────────────────────
+
+const channelsCmd = program
+  .command('channels')
+  .description('List and inspect payment channels');
+
+channelsCmd
+  .command('list')
+  .description('List recent payment channels')
+  .option('--limit <n>', 'Max channels to show', '10')
+  .option('--rpc <url>', 'RPC URL', process.env.RPC_URL || 'https://sepolia.base.org')
+  .option('--private-key <key>', 'Wallet private key (0x-prefixed)', process.env.AGENT_PRIVATE_KEY)
+  .option(
+    '--channels <address>',
+    'PaymentChannel contract address',
+    process.env.PAYMENT_CHANNEL_ADDRESS,
+  )
+  .option('--token <address>', 'USDC token address', process.env.USDC_TOKEN_ADDRESS || USDC_BASE_SEPOLIA)
+  .action(async (options) => {
+    const { limit, rpc, privateKey, channels, token } = options;
+
+    if (!channels || channels === PAYMENT_CHANNEL_ADDRESS_DEFAULT) {
+      log('✗ Error: --channels is required. Set PAYMENT_CHANNEL_ADDRESS env variable or pass --channels.');
+      process.exit(1);
+    }
+
+    let payerFilter: string | null = null;
+    if (privateKey) {
+      const key = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
+      payerFilter = privateKeyToAccount(key as Hash).address.toLowerCase();
+    }
+
+    const maxResults = Number(limit);
+
+    try {
+      const chain = getChain(rpc);
+      const publicClient = createPublicClient({ chain, transport: http(rpc) });
+
+      const count = (await publicClient.readContract({
+        address: channels as Address,
+        abi: PAYMENT_CHANNEL_ABI,
+        functionName: 'getChannelCount',
+      })) as unknown as bigint;
+
+      if (count === 0n) {
+        log('No channels found.');
+        return;
+      }
+
+      const results: { id: bigint; ch: ChannelFromChain }[] = [];
+      const countNum = Number(count);
+
+      for (let i = countNum; i >= 1 && results.length < maxResults; i--) {
+        try {
+          const ch = (await publicClient.readContract({
+            address: channels as Address,
+            abi: PAYMENT_CHANNEL_ABI,
+            functionName: 'getChannel',
+            args: [BigInt(i)],
+          })) as unknown as ChannelFromChain;
+
+          if (ch.payer === ZERO_ADDRESS) continue;
+          if (payerFilter && ch.payer.toLowerCase() !== payerFilter) continue;
+
+          results.push({ id: BigInt(i), ch });
+        } catch {
+          continue;
+        }
+      }
+
+      if (results.length === 0) {
+        log('No matching channels found.');
+        return;
+      }
+
+      const statusMap = ['Open', 'Settled', 'Refunded'];
+
+      log('');
+      log('┌──────┬────────────────────┬────────────────────┬──────────┬──────────┬──────────┬──────────┐');
+      log('│  #   │ Payer              │ Payee              │ Deposit  │ Spent    │ Status   │ Expires  │');
+      log('├──────┼────────────────────┼────────────────────┼──────────┼──────────┼──────────┼──────────┤');
+
+      results.forEach(({ id, ch }) => {
+        const payer = formatAddress(ch.payer).padEnd(18);
+        const payee = formatAddress(ch.payee).padEnd(18);
+        const deposit = formatUsdc(ch.deposit).padStart(8);
+        const spent = formatUsdc(ch.spent).padStart(8);
+        const status = statusMap[ch.status]?.padEnd(8) ?? 'Unknown '.padEnd(8);
+        const expiry = new Date(ch.expiresAt * 1000).toISOString().slice(0, 10).padEnd(8);
+        log(`│ ${String(id).padEnd(4)} │ ${payer} │ ${payee} │ ${deposit} │ ${spent} │ ${status} │ ${expiry} │`);
+      });
+
+      log('└──────┴────────────────────┴────────────────────┴──────────┴──────────┴──────────┴──────────┘');
+      log(`\n${results.length} channel(s) found.`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`✗ List failed: ${msg}`);
+      process.exit(1);
+    }
+  });
+
+// ─── rate ──────────────────────────────────────────────────
+
+program
+  .command('rate <provider> <score>')
+  .description('Rate a service provider using EAS attestations')
+  .option('--comment <text>', 'Comment about the service', 'CLI rating')
+  .option('--channel-id <id>', 'Payment channel ID for context')
+  .option('--rpc <url>', 'RPC URL', process.env.RPC_URL || 'https://sepolia.base.org')
+  .option('--private-key <key>', 'Payer private key (0x-prefixed)', process.env.AGENT_PRIVATE_KEY)
+  .option(
+    '--reputation <address>',
+    'EAS contract address',
+    process.env.EAS_ADDRESS || process.env.REPUTATION_ADDRESS,
+  )
+  .action(async (provider: string, score: string, options) => {
+    const { comment, channelId, rpc, privateKey, reputation } = options;
+
+    if (!privateKey) {
+      log('✗ Error: --private-key is required. Set AGENT_PRIVATE_KEY env variable or pass --private-key.');
+      process.exit(1);
+    }
+    if (!reputation) {
+      log('✗ Error: --reputation is required. Set EAS_ADDRESS or REPUTATION_ADDRESS env variable or pass --reputation.');
+      process.exit(1);
+    }
+
+    const key = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
+    const scoreNum = Number(score);
+    const chId = channelId ? BigInt(channelId) : 0n;
+
+    if (!Number.isInteger(scoreNum) || scoreNum < 0 || scoreNum > 10) {
+      log('✗ Error: Score must be an integer between 0 and 10.');
+      process.exit(1);
+    }
+
+    try {
+      const account = privateKeyToAccount(key as Hash);
+      const chain = getChain(rpc);
+      const publicClient = createPublicClient({ chain, transport: http(rpc) });
+      const walletClient = createWalletClient({ chain, transport: http(rpc), account });
+
+      log(`Rating provider ${provider} with score ${scoreNum}/10...`);
+
+      const result = await rateService(
+        walletClient,
+        publicClient,
+        reputation as Address,
+        provider as Address,
+        chId,
+        scoreNum,
+        comment,
+      );
+
+      log(`✓ Rating submitted.`);
+      log(`  Attestation UID: ${result.attestationUid}`);
+      log(`  Tx:              ${result.txHash}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`✗ Rating failed: ${msg}`);
+      process.exit(1);
+    }
+  });
+
+// ─── score ─────────────────────────────────────────────────
+
+program
+  .command('score <provider>')
+  .description('Show the reputation score for a provider')
+  .option('--rpc <url>', 'RPC URL', process.env.RPC_URL || 'https://sepolia.base.org')
+  .option(
+    '--reputation <address>',
+    'AgentReputation contract address',
+    process.env.REPUTATION_ADDRESS,
+  )
+  .action(async (provider: string, options) => {
+    const { rpc, reputation } = options;
+
+    if (!reputation) {
+      log('✗ Error: --reputation is required. Set REPUTATION_ADDRESS env variable or pass --reputation.');
+      process.exit(1);
+    }
+
+    try {
+      const chain = getChain(rpc);
+      const publicClient = createPublicClient({ chain, transport: http(rpc) });
+
+      const { averageScore, totalRatings } = await getProviderScore(
+        publicClient,
+        reputation as Address,
+        provider as Address,
+      );
+
+      let confidence = 'low';
+      if (totalRatings >= 10) confidence = 'high';
+      else if (totalRatings >= 3) confidence = 'medium';
+
+      log('');
+      log(`Provider ${provider}:`);
+      log(`  Score:      ${averageScore.toFixed(1)}/10`);
+      log(`  Ratings:    ${totalRatings}`);
+      log(`  Confidence: ${confidence}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`✗ Score query failed: ${msg}`);
       process.exit(1);
     }
   });

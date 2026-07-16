@@ -6,11 +6,15 @@ import type { WalletClient, PublicClient } from 'viem';
 import { recoverTypedDataAddress } from 'viem';
 import { PAYMENT_PROOF_TYPE } from './signing.js';
 import { PAYMENT_CHANNEL_ABI } from './contracts.js';
+import { SettlementWorker } from './extensions/settlement.js';
 import {
   InvalidSignatureError,
   InsufficientFundsError,
   AgentSettlementError,
 } from './errors.js';
+import { ValuePacketEvents } from './extensions/events.js';
+import type { ChannelStateStore } from './extensions/persistence.js';
+import { MemoryChannelStateStore } from './extensions/persistence.js';
 
 const DOMAIN_NAME = 'ValuePacket';
 const DOMAIN_VERSION = '1';
@@ -21,6 +25,7 @@ interface ChannelState {
   lastNonce: bigint;
   payer: `0x${string}`;
   deposit: bigint;
+  expiresAt: number;
 }
 
 interface ViemChannel {
@@ -49,6 +54,8 @@ export interface ChannelServerConfig {
     channelId: bigint;
     cumulativeSpent: bigint;
   }) => Promise<unknown>;
+  store?: ChannelStateStore;
+  settlementWorker?: SettlementWorker;
 }
 
 /**
@@ -79,8 +86,14 @@ export class ChannelServer {
     channelId: bigint;
     cumulativeSpent: bigint;
   }) => Promise<unknown>;
+  private settlementWorker: SettlementWorker | null;
   private httpServer: Server | null;
   private channels: Map<bigint, ChannelState>;
+  private store: ChannelStateStore;
+  private channelCache: Map<bigint, { channel: ViemChannel; timestamp: number }>;
+  private readonly CACHE_TTL_MS = 30_000;
+
+  public readonly events = new ValuePacketEvents();
 
   constructor(config: ChannelServerConfig) {
     this.wallet = config.wallet;
@@ -88,8 +101,11 @@ export class ChannelServer {
     this.paymentChannelAddress = config.paymentChannelAddress;
     this.port = config.port;
     this.handler = config.handler;
+    this.settlementWorker = config.settlementWorker ?? null;
     this.httpServer = null;
     this.channels = new Map();
+    this.channelCache = new Map();
+    this.store = config.store ?? new MemoryChannelStateStore();
   }
 
   /**
@@ -98,6 +114,10 @@ export class ChannelServer {
   async start(): Promise<void> {
     if (this.httpServer) {
       throw new Error('Server is already running');
+    }
+
+    if (this.settlementWorker) {
+      this.settlementWorker.start();
     }
 
     this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -124,7 +144,7 @@ export class ChannelServer {
         const requestHash = paymentHeaders.requestHash as `0x${string}`;
 
         // Verify the PaymentProof signature against the payer's address
-        const payerAddress = await this.verifyProof(
+        const { payerAddress, channel } = await this.verifyProof(
           channelId,
           cumulativeSpent,
           requestHash,
@@ -133,6 +153,11 @@ export class ChannelServer {
         );
 
         // Check or initialize channel state
+        const prevState = this.channels.get(channelId);
+        const perRequestSpent = prevState
+          ? cumulativeSpent - prevState.cumulativeSpent
+          : cumulativeSpent;
+
         await this.validateAndTrackChannel(
           channelId,
           cumulativeSpent,
@@ -140,11 +165,31 @@ export class ChannelServer {
           payerAddress,
         );
 
+        // Track for automatic settlement if a close signature is provided
+        const closeSignature = this.extractCloseSignature(req);
+        if (this.settlementWorker && closeSignature) {
+          this.settlementWorker.trackChannel(
+            channelId,
+            cumulativeSpent,
+            channel.expiresAt,
+            closeSignature,
+          );
+        }
+
         // Process the request via the handler
         const result = await this.handler({
           body,
           channelId,
           cumulativeSpent,
+        });
+
+        this.events.emit('payment:received', {
+          channelId,
+          payer: payerAddress,
+          cumulativeSpent,
+          perRequestSpent,
+          nonce,
+          body,
         });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -168,6 +213,10 @@ export class ChannelServer {
    * Stops the HTTP server gracefully.
    */
   async stop(): Promise<void> {
+    if (this.settlementWorker) {
+      this.settlementWorker.stop();
+    }
+
     if (!this.httpServer) {
       return;
     }
@@ -192,7 +241,42 @@ export class ChannelServer {
     return this.channels.get(channelId);
   }
 
+  /**
+   * Invalidates the cached on-chain channel data for a given channel ID.
+   * Call this after settling or closing a channel so that subsequent
+   * requests re-read the current on-chain state.
+   */
+  invalidateChannelCache(channelId: bigint): void {
+    this.channelCache.delete(channelId);
+  }
+
+  /**
+   * Removes a channel from in-memory tracking and persistent storage.
+   * Call this when a channel is settled or closed.
+   */
+  async removeChannel(channelId: bigint): Promise<void> {
+    this.channels.delete(channelId);
+    this.channelCache.delete(channelId);
+    await this.store.delete(channelId);
+  }
+
   // ── Private methods ─────────────────────────────────────────────
+
+  private async getCachedChannel(channelId: bigint): Promise<ViemChannel> {
+    const cached = this.channelCache.get(channelId);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL_MS) {
+      return cached.channel;
+    }
+    const result = await this.publicClient.readContract({
+      address: this.paymentChannelAddress,
+      abi: PAYMENT_CHANNEL_ABI,
+      functionName: 'getChannel',
+      args: [channelId],
+    });
+    const channel = result as unknown as ViemChannel;
+    this.channelCache.set(channelId, { channel, timestamp: Date.now() });
+    return channel;
+  }
 
   private async verifyProof(
     channelId: bigint,
@@ -200,7 +284,7 @@ export class ChannelServer {
     requestHash: `0x${string}`,
     nonce: bigint,
     proof: `0x${string}`,
-  ): Promise<`0x${string}`> {
+  ): Promise<{ payerAddress: `0x${string}`; channel: ViemChannel }> {
     if (!this.wallet.chain) {
       throw new Error('Wallet has no chain configured');
     }
@@ -225,14 +309,7 @@ export class ChannelServer {
       signature: proof,
     });
 
-    const result = await this.publicClient.readContract({
-      address: this.paymentChannelAddress,
-      abi: PAYMENT_CHANNEL_ABI,
-      functionName: 'getChannel',
-      args: [channelId],
-    });
-
-    const channel = result as unknown as ViemChannel;
+    const channel = await this.getCachedChannel(channelId);
 
     const expectedPayer = channel.payer;
 
@@ -243,13 +320,15 @@ export class ChannelServer {
     }
 
     if (channel.status !== 0) {
+      this.invalidateChannelCache(channelId);
+      await this.store.delete(channelId);
       throw new AgentSettlementError(
         `Channel ${channelId.toString()} is not open (status: ${channel.status})`,
         'CHANNEL_NOT_OPEN',
       );
     }
 
-    return expectedPayer;
+    return { payerAddress: expectedPayer, channel };
   }
 
   private async validateAndTrackChannel(
@@ -258,7 +337,7 @@ export class ChannelServer {
     nonce: bigint,
     payerAddress: `0x${string}`,
   ): Promise<void> {
-    const existing = this.channels.get(channelId);
+    let existing = this.channels.get(channelId);
 
     if (existing) {
       if (cumulativeSpent <= existing.cumulativeSpent) {
@@ -277,24 +356,52 @@ export class ChannelServer {
 
       existing.cumulativeSpent = cumulativeSpent;
       existing.lastNonce = nonce;
-    } else {
-      const result = await this.publicClient.readContract({
-        address: this.paymentChannelAddress,
-        abi: PAYMENT_CHANNEL_ABI,
-        functionName: 'getChannel',
-        args: [channelId],
-      });
-
-      const channel = result as unknown as ViemChannel;
-
-      this.channels.set(channelId, {
-        channelId,
-        cumulativeSpent,
-        lastNonce: nonce,
-        payer: payerAddress,
-        deposit: channel.deposit,
-      });
+      await this.store.set(channelId, existing);
+      return;
     }
+
+    const persisted = await this.store.get(channelId);
+    if (persisted) {
+      if (persisted.payer.toLowerCase() !== payerAddress.toLowerCase()) {
+        throw new AgentSettlementError(
+          `Stored payer ${persisted.payer} does not match verified payer ${payerAddress}`,
+          'PAYER_MISMATCH',
+        );
+      }
+
+      if (cumulativeSpent <= persisted.cumulativeSpent) {
+        throw new AgentSettlementError(
+          `Cumulative spent ${cumulativeSpent.toString()} is not greater than persisted ${persisted.cumulativeSpent.toString()} for channel ${channelId.toString()}`,
+          'SPENT_NOT_INCREASED',
+        );
+      }
+
+      if (nonce <= persisted.lastNonce) {
+        throw new AgentSettlementError(
+          `Nonce ${nonce.toString()} is not greater than persisted ${persisted.lastNonce.toString()} for channel ${channelId.toString()}`,
+          'NONCE_NOT_INCREASED',
+        );
+      }
+
+      persisted.cumulativeSpent = cumulativeSpent;
+      persisted.lastNonce = nonce;
+      this.channels.set(channelId, persisted);
+      await this.store.set(channelId, persisted);
+      return;
+    }
+
+    const channel = await this.getCachedChannel(channelId);
+
+    const state: ChannelState = {
+      channelId,
+      cumulativeSpent,
+      lastNonce: nonce,
+      payer: payerAddress,
+      deposit: channel.deposit,
+      expiresAt: channel.expiresAt,
+    };
+    this.channels.set(channelId, state);
+    await this.store.set(channelId, state);
   }
 
   private extractPaymentHeaders(req: IncomingMessage): {
@@ -321,6 +428,15 @@ export class ChannelServer {
       proof: Array.isArray(proof) ? proof[0] : proof,
       requestHash: Array.isArray(requestHash) ? requestHash[0] : requestHash,
     };
+  }
+
+  private extractCloseSignature(req: IncomingMessage): `0x${string}` | null {
+    const header = req.headers['x-close-signature'];
+    if (!header) {
+      return null;
+    }
+    const value = Array.isArray(header) ? header[0] : header;
+    return value as `0x${string}`;
   }
 
   private parseRequestBody(req: IncomingMessage): Promise<unknown> {

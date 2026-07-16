@@ -17,7 +17,7 @@ interface ISpendingPolicy {
         uint256 deposit,
         uint256 expiresAt,
         bytes calldata metadata
-    ) external view returns (bool);
+    ) external returns (bool);
 
     /// @notice Validate the closing (settlement) of a payment channel
     /// @param payer    Address that funded the channel

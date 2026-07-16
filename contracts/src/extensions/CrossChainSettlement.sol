@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 contract CrossChainSettlement {
     using SafeERC20 for IERC20;
@@ -174,27 +175,6 @@ contract CrossChainSettlement {
         bytes32 digest,
         bytes memory signature
     ) internal pure returns (address) {
-        if (signature.length != 65) revert InvalidSignature();
-
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-
-        assembly {
-            r := mload(add(signature, 32))
-            s := mload(add(signature, 64))
-            v := byte(0, mload(add(signature, 96)))
-        }
-
-        if (v < 27) {
-            v += 27;
-        }
-
-        if (v != 27 && v != 28) revert InvalidSignature();
-
-        address signer = ecrecover(digest, v, r, s);
-        if (signer == address(0)) revert InvalidSignature();
-
-        return signer;
+        return ECDSA.recover(digest, signature);
     }
 }

@@ -88,6 +88,9 @@ contract SpendingPolicy is ISpendingPolicy {
     /// @dev Internal mapping to quickly check allowed providers per user
     mapping(address => mapping(address => bool)) private _isProviderAllowed;
 
+    /// @dev Cache of active providers from ServiceRegistry for O(1) lookup
+    mapping(address => bool) private _activeProviders;
+
     constructor(address _serviceRegistry) {
         serviceRegistry = ServiceRegistry(_serviceRegistry);
     }
@@ -192,7 +195,7 @@ contract SpendingPolicy is ISpendingPolicy {
         uint256 deposit,
         uint256 expiresAt,
         bytes calldata
-    ) external view returns (bool) {
+    ) external returns (bool) {
         PolicyConfig storage cfg = policies[payer];
         if (!cfg.active) return true;
 
@@ -206,16 +209,12 @@ contract SpendingPolicy is ISpendingPolicy {
         }
 
         if (cfg.requireRegisteredService) {
-            uint256 count = serviceRegistry.getServiceCount();
-            bool found = false;
-            for (uint256 i = 0; i < count; i++) {
-                (, ServiceRegistry.Service memory svc) = serviceRegistry.getServiceAtIndex(i);
-                if (svc.provider == payee && svc.active) {
-                    found = true;
-                    break;
+            if (!_activeProviders[payee]) {
+                _refreshActiveProviders();
+                if (!_activeProviders[payee]) {
+                    revert PayeeNotRegistered(payee);
                 }
             }
-            if (!found) revert PayeeNotRegistered(payee);
         }
 
         return true;
@@ -272,5 +271,14 @@ contract SpendingPolicy is ISpendingPolicy {
     function _decodeOpenedAt(bytes calldata metadata) internal pure returns (uint256) {
         if (metadata.length < 32) return 0;
         return uint256(bytes32(metadata[:32]));
+    }
+
+    /// @dev Refresh the _activeProviders cache from the ServiceRegistry
+    function _refreshActiveProviders() private {
+        uint256 count = serviceRegistry.getServiceCount();
+        for (uint256 i = 0; i < count; i++) {
+            (, ServiceRegistry.Service memory svc) = serviceRegistry.getServiceAtIndex(i);
+            _activeProviders[svc.provider] = svc.active;
+        }
     }
 }

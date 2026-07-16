@@ -1,9 +1,10 @@
-/** @agent-settlement/sdk — Agent Settlement Protocol TypeScript SDK */
+/** @valuepacket/sdk — ValuePacket Protocol TypeScript SDK */
 
 export { AgentPay } from './client.js';
 export { ChannelSession } from './channel.js';
 export { ChannelServer } from './provider.js';
 export { SubscriptionSession } from './extensions/subscription.js';
+export { SettlementWorker } from './extensions/settlement.js';
 
 export type {
   Service,
@@ -64,6 +65,19 @@ export {
 } from './errors.js';
 
 export {
+  ValuePacketEvents,
+  createWebhookForwarder,
+} from './extensions/events.js';
+
+export type {
+  ChannelOpenedEvent,
+  PaymentReceivedEvent,
+  ChannelClosedEvent,
+  ChannelRefundedEvent,
+  ValuePacketEventMap,
+} from './extensions/events.js';
+
+export {
   rateService,
   getProviderRatings,
   getProviderScore,
@@ -80,3 +94,13 @@ export type {
 export type {
   ChannelServerConfig,
 } from './provider.js';
+
+export type {
+  ChannelStateStore,
+  ChannelState,
+} from './extensions/persistence.js';
+
+export {
+  MemoryChannelStateStore,
+  FileChannelStateStore,
+} from './extensions/persistence.js';

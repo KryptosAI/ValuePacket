@@ -26,6 +26,10 @@ Thumbs.db
 *.log
 /tmp/
 
+# Spec files (separate projects)
+aip-spec.md
+whitepaper-open-interop-layer.md
+
 # IDE
 .idea/
 .vscode/

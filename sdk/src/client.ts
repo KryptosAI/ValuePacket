@@ -1,7 +1,16 @@
 /** Main AgentPay client — the primary developer API for the Agent Settlement Protocol */
 
-import { decodeEventLog } from 'viem';
-import type { WalletClient, PublicClient } from 'viem';
+import {
+  decodeEventLog,
+  privateKeyToAccount,
+  createWalletClient,
+  createPublicClient,
+  http,
+  type WalletClient,
+  type PublicClient,
+} from 'viem';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type {
   Service,
   ServiceDescriptor,
@@ -18,6 +27,7 @@ import {
   MetadataResolutionError,
 } from './errors.js';
 import { ChannelSession } from './channel.js';
+import { ValuePacketEvents } from './extensions/events.js';
 import {
   SERVICE_REGISTRY_ABI,
   PAYMENT_CHANNEL_ABI,
@@ -57,6 +67,32 @@ function toService(vs: ViemService): Service {
   };
 }
 
+function resolveLocalDeploymentAddresses(): {
+  serviceRegistry: string;
+  paymentChannel: string;
+  spendingPolicy: string;
+} | null {
+  const searchPaths = [
+    resolve(process.cwd(), 'contracts', 'deployments', 'local.json'),
+    resolve(process.cwd(), '..', 'contracts', 'deployments', 'local.json'),
+    resolve(process.cwd(), 'deployments', 'local.json'),
+  ];
+  for (const deploymentPath of searchPaths) {
+    try {
+      const raw = readFileSync(deploymentPath, 'utf-8');
+      const data = JSON.parse(raw);
+      return {
+        serviceRegistry: data.serviceRegistry as string,
+        paymentChannel: data.paymentChannel as string,
+        spendingPolicy: data.spendingPolicy as string,
+      };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 /**
  * The main entry point for the Agent Settlement Protocol SDK.
  * Provides methods for service registration, discovery, payment
@@ -70,6 +106,8 @@ export class AgentPay {
   private spendingPolicyAddress: `0x${string}` | undefined;
   private indexerUrl: string | undefined;
 
+  public readonly events = new ValuePacketEvents();
+
   constructor(config: AgentPayConfig) {
     this.wallet = config.wallet;
     this.publicClient = config.publicClient;
@@ -77,6 +115,116 @@ export class AgentPay {
     this.paymentChannelAddress = config.paymentChannelAddress;
     this.spendingPolicyAddress = config.spendingPolicyAddress;
     this.indexerUrl = config.indexerUrl;
+  }
+
+  // ── Static factories ────────────────────────────────────────────
+
+  /**
+   * Creates an {@link AgentPay} instance from a private key.
+   *
+   * Auto-detects the chain ID from the RPC endpoint if not provided,
+   * and resolves `serviceRegistryAddress` / `paymentChannelAddress`
+   * from `contracts/deployments/local.json` when available.
+   *
+   * @example
+   * ```ts
+   * import { AgentPay } from '@valuepacket/sdk';
+   *
+   * const agentPay = await AgentPay.fromPrivateKey({
+   *   privateKey: '0x...',
+   *   rpcUrl: 'http://localhost:8545',
+   * });
+   * ```
+   */
+  static async fromPrivateKey(config: {
+    privateKey: `0x${string}`;
+    rpcUrl: string;
+    serviceRegistryAddress?: `0x${string}`;
+    paymentChannelAddress?: `0x${string}`;
+    spendingPolicyAddress?: `0x${string}`;
+    indexerUrl?: string;
+    chainId?: number;
+  }): Promise<AgentPay> {
+    const account = privateKeyToAccount(config.privateKey);
+    const transport = http(config.rpcUrl);
+
+    // Auto-detect chain ID if not provided (validates connectivity)
+    if (config.chainId === undefined) {
+      const tempClient = createPublicClient({ transport });
+      await tempClient.getChainId();
+    }
+
+    const wallet = createWalletClient({ account, transport }) as unknown as WalletClient;
+    const publicClient = createPublicClient({ transport });
+
+    // Auto-detect contract addresses from deployments
+    let serviceRegistryAddress = config.serviceRegistryAddress;
+    let paymentChannelAddress = config.paymentChannelAddress;
+    let spendingPolicyAddress = config.spendingPolicyAddress;
+
+    if (!serviceRegistryAddress || !paymentChannelAddress) {
+      const deploymentAddrs = resolveLocalDeploymentAddresses();
+      if (deploymentAddrs) {
+        serviceRegistryAddress = serviceRegistryAddress ?? deploymentAddrs.serviceRegistry as `0x${string}`;
+        paymentChannelAddress = paymentChannelAddress ?? deploymentAddrs.paymentChannel as `0x${string}`;
+        spendingPolicyAddress = spendingPolicyAddress ?? deploymentAddrs.spendingPolicy as `0x${string}`;
+      }
+    }
+
+    if (!serviceRegistryAddress) {
+      throw new Error(
+        'serviceRegistryAddress is required — provide it directly or ensure contracts/deployments/local.json exists',
+      );
+    }
+    if (!paymentChannelAddress) {
+      throw new Error(
+        'paymentChannelAddress is required — provide it directly or ensure contracts/deployments/local.json exists',
+      );
+    }
+
+    return new AgentPay({
+      wallet,
+      publicClient,
+      serviceRegistryAddress,
+      paymentChannelAddress,
+      spendingPolicyAddress,
+      indexerUrl: config.indexerUrl,
+    });
+  }
+
+  /**
+   * Creates an {@link AgentPay} instance from environment variables.
+   *
+   * | Variable                   | Required | Default                    |
+   * |----------------------------|----------|----------------------------|
+   * | `PRIVATE_KEY`              | yes      | —                          |
+   * | `RPC_URL`                  | no       | `http://localhost:8545`    |
+   * | `SERVICE_REGISTRY_ADDRESS` | no       | auto-detected              |
+   * | `PAYMENT_CHANNEL_ADDRESS`  | no       | auto-detected              |
+   * | `SPENDING_POLICY_ADDRESS`  | no       | auto-detected              |
+   * | `INDEXER_URL`              | no       | —                          |
+   *
+   * @example
+   * ```ts
+   * import { AgentPay } from '@valuepacket/sdk';
+   *
+   * const agentPay = await AgentPay.fromEnv();
+   * ```
+   */
+  static async fromEnv(): Promise<AgentPay> {
+    const privateKey = process.env.PRIVATE_KEY;
+    if (!privateKey) {
+      throw new Error('PRIVATE_KEY environment variable is required');
+    }
+
+    return AgentPay.fromPrivateKey({
+      privateKey: privateKey as `0x${string}`,
+      rpcUrl: process.env.RPC_URL ?? 'http://localhost:8545',
+      serviceRegistryAddress: process.env.SERVICE_REGISTRY_ADDRESS as `0x${string}` | undefined,
+      paymentChannelAddress: process.env.PAYMENT_CHANNEL_ADDRESS as `0x${string}` | undefined,
+      spendingPolicyAddress: process.env.SPENDING_POLICY_ADDRESS as `0x${string}` | undefined,
+      indexerUrl: process.env.INDEXER_URL,
+    });
   }
 
   // ── Service Registry ────────────────────────────────────────────
@@ -447,6 +595,17 @@ export class AgentPay {
       throw new Error('ChannelOpened event not found in transaction receipt');
     }
 
+    const payerAddress = this.wallet.account!.address as `0x${string}`;
+
+    this.events.emit('channel:opened', {
+      channelId,
+      payer: payerAddress,
+      payee: params.provider,
+      deposit: params.deposit,
+      expiresAt,
+      txHash,
+    });
+
     return new ChannelSession({
       channelId,
       payer: this.wallet,
@@ -496,6 +655,43 @@ export class AgentPay {
       metadata: channel.metadata,
       status: channel.status as ChannelStatus,
     };
+  }
+
+  /**
+   * One-call convenience method that combines service discovery,
+   * channel opening, and a paid request into a single call.
+   *
+   * @returns The request result, the active ChannelSession, and the discovered service.
+   */
+  async pay<T = unknown>(params: {
+    serviceType: string;
+    body: Record<string, unknown>;
+    deposit: bigint;
+    expiresIn?: number;
+    token: `0x${string}`;
+    maxPrice?: bigint;
+    timeoutMs?: number;
+  }): Promise<{ result: T; session: ChannelSession; service: DiscoveredService }> {
+    const services = await this.discover({ serviceType: params.serviceType, maxPrice: params.maxPrice, active: true });
+    if (services.length === 0) throw new ServiceNotFoundError(params.serviceType);
+
+    const service = services[0];
+
+    const session = await this.openChannel({
+      provider: service.provider,
+      token: params.token,
+      deposit: params.deposit,
+      expiresIn: params.expiresIn ?? 3600,
+    });
+
+    if (service.descriptor?.api?.endpoint) {
+      session.setEndpoint(service.descriptor.api.endpoint);
+    }
+    session.setPricePerRequest(service.pricePerRequest);
+
+    const result = await session.request<T>(params.body, { timeoutMs: params.timeoutMs });
+
+    return { result, session, service };
   }
 
   // ── Spending Policy ─────────────────────────────────────────────

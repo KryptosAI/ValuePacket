@@ -8,6 +8,7 @@ import {
   HttpRequestError,
 } from './errors.js';
 import { ChannelServer } from './provider.js';
+import { ValuePacketEvents } from './extensions/events.js';
 
 interface ViemChannel {
   payer: `0x${string}`;
@@ -35,6 +36,7 @@ export interface ChannelSessionConfig {
   deposit: bigint;
   verifyingContract: `0x${string}`;
   paymentChannelAddress: `0x${string}`;
+  expiresAt?: number;
 }
 
 /**
@@ -67,6 +69,10 @@ export class ChannelSession {
   cumulativeSpent: bigint;
   /** Current request counter, incremented per request. */
   nonce: bigint;
+  /** Unix timestamp when the channel expires. */
+  expiresAt: number;
+
+  public readonly events = new ValuePacketEvents();
 
   constructor(config: ChannelSessionConfig) {
     this.channelId = config.channelId;
@@ -81,6 +87,7 @@ export class ChannelSession {
 
     this.cumulativeSpent = 0n;
     this.nonce = 0n;
+    this.expiresAt = config.expiresAt ?? 0;
   }
 
   /**
@@ -107,6 +114,41 @@ export class ChannelSession {
   }
 
   /**
+   * Exports the current channel state for persistence.
+   * Use with {@link fromState} to restore a session after a restart.
+   */
+  exportState(): {
+    channelId: bigint;
+    cumulativeSpent: bigint;
+    nonce: bigint;
+    deposit: bigint;
+    expiresAt: number;
+  } {
+    return {
+      channelId: this.channelId,
+      cumulativeSpent: this.cumulativeSpent,
+      nonce: this.nonce,
+      deposit: this.deposit,
+      expiresAt: this.expiresAt,
+    };
+  }
+
+  /**
+   * Creates a ChannelSession from a previously exported state.
+   * The config must contain the same channel parameters (channelId, payer, etc.)
+   * that were used when the session was originally created.
+   */
+  static fromState(
+    config: ChannelSessionConfig,
+    state: ReturnType<ChannelSession['exportState']>,
+  ): ChannelSession {
+    const session = new ChannelSession(config);
+    session.cumulativeSpent = state.cumulativeSpent;
+    session.nonce = state.nonce;
+    return session;
+  }
+
+  /**
    * Makes a paid request to the service provider.
    *
    * 1. Increments the nonce and computes the new cumulative spent.
@@ -119,7 +161,7 @@ export class ChannelSession {
    * @throws {InsufficientFundsError} if cumulativeSpent exceeds the deposit.
    * @throws {HttpRequestError} if the provider returns a non-200 status.
    */
-  async request<T = unknown>(body: Record<string, unknown>): Promise<T> {
+  async request<T = unknown>(body: Record<string, unknown>, options?: { timeoutMs?: number }): Promise<T> {
     this.nonce += 1n;
     const newSpent = this.pricePerRequest * this.nonce;
 
@@ -144,33 +186,70 @@ export class ChannelSession {
       signature,
     );
 
-    const response = await fetch(this.payeeEndpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Channel-Id': headers.channelId,
-        'X-Cumulative-Spent': headers.cumulativeSpent,
-        'X-Payment-Proof': headers.proof,
-        'X-Request-Nonce': headers.nonce,
-        'X-Request-Hash': headers.requestHash,
-      },
-      body: JSON.stringify(body),
-    });
+    const closeSig = await signChannelClose(
+      this.payer,
+      this.verifyingContract,
+      this.channelId,
+      newSpent,
+    );
 
-    if (!response.ok) {
-      let responseBody = '';
-      try {
-        responseBody = await response.text();
-      } catch {
-        // ignore
+    const timeout = options?.timeoutMs ?? 30_000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await fetch(this.payeeEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Channel-Id': headers.channelId,
+          'X-Cumulative-Spent': headers.cumulativeSpent,
+          'X-Payment-Proof': headers.proof,
+          'X-Request-Nonce': headers.nonce,
+          'X-Request-Hash': headers.requestHash,
+          'X-Close-Signature': closeSig,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        let responseBody = '';
+        try {
+          responseBody = await response.text();
+        } catch {
+          // ignore
+        }
+        throw new HttpRequestError(response.status, this.payeeEndpoint, responseBody);
       }
-      throw new HttpRequestError(response.status, this.payeeEndpoint, responseBody);
+
+      this.cumulativeSpent = newSpent;
+
+      const data = await response.json() as T;
+      return data;
+    } finally {
+      clearTimeout(timeoutId);
     }
+  }
 
-    this.cumulativeSpent = newSpent;
-
-    const data = await response.json() as T;
-    return data;
+  /**
+   * Generates a ChannelClose signature for the current cumulativeSpent.
+   * The provider can use this signature to auto-settle the channel before
+   * expiry via the SettlementWorker.
+   *
+   * @returns The current cumulativeSpent and the EIP-712 close signature.
+   */
+  async getCloseSignature(): Promise<{
+    cumulativeSpent: bigint;
+    signature: `0x${string}`;
+  }> {
+    const sig = await signChannelClose(
+      this.payer,
+      this.verifyingContract,
+      this.channelId,
+      this.cumulativeSpent,
+    );
+    return { cumulativeSpent: this.cumulativeSpent, signature: sig };
   }
 
   /**
@@ -204,6 +283,8 @@ export class ChannelSession {
     });
 
     const txHash = await this.payer.writeContract(request);
+
+    this.events.emit('channel:closed', { channelId: this.channelId, spent, refunded, txHash });
 
     return { txHash, spent, refunded };
   }
@@ -246,6 +327,12 @@ export class ChannelSession {
 
       const txHash = await this.payer.writeContract(request);
 
+      this.events.emit('channel:refunded', {
+        channelId: this.channelId,
+        refunded: this.deposit,
+        txHash,
+      });
+
       return { txHash, refunded: this.deposit };
     }
 
@@ -266,7 +353,15 @@ export class ChannelSession {
 
     const txHash = await this.payer.writeContract(request);
 
-    return { txHash, refunded: this.deposit - this.cumulativeSpent };
+    const refunded = this.deposit - this.cumulativeSpent;
+    this.events.emit('channel:closed', {
+      channelId: this.channelId,
+      spent: this.cumulativeSpent,
+      refunded,
+      txHash,
+    });
+
+    return { txHash, refunded };
   }
 
   /**

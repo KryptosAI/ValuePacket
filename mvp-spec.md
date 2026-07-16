@@ -384,7 +384,7 @@ Each service registered in ServiceRegistry points to an IPFS JSON document:
 ### 5.1 Core SDK (TypeScript)
 
 ```typescript
-import { AgentPay } from '@agent-settlement/sdk';
+import { AgentPay } from '@valuepacket/sdk';
 import { createWalletClient, http } from 'viem';
 import { base } from 'viem/chains';
 
@@ -529,13 +529,13 @@ Includes a lightweight cache of service metadata (fetched from IPFS, cached loca
 
 ```bash
 # Terminal 1 — Service provider agent (ElizaOS, provides prediction feed)
-npx @agent-settlement/dev serve \
+npx @valuepacket/cli serve \
   --service prediction-feed \
   --price 0.05 \
   --framework eliza
 
 # Terminal 2 — Consumer agent (G.A.M.E, consumes prediction feed)
-npx @agent-settlement/dev consume \
+npx @valuepacket/cli consume \
   --service-type prediction-feed \
   --deposit 5 \
   --framework game
@@ -561,7 +561,7 @@ npx @agent-settlement/dev consume \
 |---|---|
 | 1 | `ServiceRegistry.sol` + `PaymentChannel.sol` + `SpendingPolicy.sol` (reference impl). Full Foundry test suite. Deploy to Base Sepolia. |
 | 2 | TypeScript SDK: `openChannel`, `request` (with auto PaymentProof signing), `closeChannel`, `serve` (service provider). E2E tests on testnet. |
-| 3 | Ponder indexer for service discovery. WebSocket relay for channel events. CLI dev tool (`npx @agent-settlement/dev`). |
+| 3 | Ponder indexer for service discovery. WebSocket relay for channel events. CLI dev tool (`npx @valuepacket/cli`). |
 | 4 | ElizaOS adapter + G.A.M.E adapter. AgentKit wallet integration. Integration demo passing. Documentation. Blog post: "Any agent can pay any agent." |
 
 ---
