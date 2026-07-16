@@ -7,45 +7,124 @@ on:
     branches: [main]
 
 jobs:
-  contracts:
+  solidity-tests:
+    name: Solidity Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - uses: foundry-rs/foundry-toolchain@v1
-      - run: cd contracts && forge test
-      - run: cd contracts && forge build
+      - name: Run forge test
+        working-directory: contracts
+        run: forge test
 
-  sdk:
+  typescript-build:
+    name: TypeScript Build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm ci
-      - run: cd sdk && npm run build
-      - run: cd sdk && npx tsc --noEmit
+      - name: Build SDK
+        working-directory: sdk
+        run: |
+          npm install
+          npm run build
+      - name: Build CLI
+        working-directory: cli
+        run: |
+          npm install
+          npm run build
 
-  cli:
+  happy-path-integration:
+    name: Happy-Path Integration
     runs-on: ubuntu-latest
+    needs:
+      - solidity-tests
+      - typescript-build
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: foundry-rs/foundry-toolchain@v1
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm ci
-      - run: cd cli && npm run build
-      - run: cd cli && npm test
+      - name: Install workspace dependencies
+        run: npm install
+      - name: Build SDK
+        working-directory: sdk
+        run: npm run build
+      - name: Start anvil
+        run: |
+          anvil --host 0.0.0.0 --port 8545 --chain-id 31337 > /tmp/anvil.log 2>&1 &
+          echo "Waiting for anvil..."
+          for i in $(seq 1 30); do
+            if curl -s -X POST -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' \
+              http://localhost:8545 > /dev/null 2>&1; then
+              echo "Anvil is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Anvil failed to start"
+          cat /tmp/anvil.log
+          exit 1
+      - name: Deploy contracts
+        working-directory: contracts
+        run: |
+          mkdir -p deployments
+          forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast 2>&1 | tee /tmp/forge-output.txt
+      - name: Parse deployed addresses
+        run: |
+          MOCK_USDC=$(grep -oP 'MOCK_USDC=\s*\K0x[a-fA-F0-9]+' /tmp/forge-output.txt)
+          PAYMENT_CHANNEL=$(grep -oP 'PAYMENT_CHANNEL=\s*\K0x[a-fA-F0-9]+' /tmp/forge-output.txt)
+          SERVICE_REGISTRY=$(grep -oP 'SERVICE_REGISTRY=\s*\K0x[a-fA-F0-9]+' /tmp/forge-output.txt)
+          SPENDING_POLICY=$(grep -oP 'SPENDING_POLICY=\s*\K0x[a-fA-F0-9]+' /tmp/forge-output.txt)
+          CHAIN_ID=$(grep -oP 'CHAIN_ID=\s*\K[0-9]+' /tmp/forge-output.txt)
 
-  adapters:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm ci
-      - run: cd adapters/eliza && npm run build
-      - run: cd adapters/game && npm run build
+          cat > contracts/deployments/local.json <<JSONEOF
+          {
+            "chainId": $CHAIN_ID,
+            "mockUSDC": "$MOCK_USDC",
+            "paymentChannel": "$PAYMENT_CHANNEL",
+            "serviceRegistry": "$SERVICE_REGISTRY",
+            "spendingPolicy": "$SPENDING_POLICY"
+          }
+          JSONEOF
+
+          echo "USDC_ADDRESS=$MOCK_USDC" >> "$GITHUB_ENV"
+          echo "PAYMENT_CHANNEL_ADDRESS=$PAYMENT_CHANNEL" >> "$GITHUB_ENV"
+
+          echo "=== deployments/local.json ==="
+          cat contracts/deployments/local.json
+      - name: Start price-feed server
+        working-directory: services/price-feed
+        env:
+          CHAIN: local
+          RPC_URL: http://localhost:8545
+        run: |
+          npx tsx src/server.ts > /tmp/price-feed.log 2>&1 &
+          echo "Waiting for price-feed server..."
+          for i in $(seq 1 30); do
+            if curl -s http://localhost:3000/health 2>/dev/null | grep -q '"ok"'; then
+              echo "Price-feed server is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Price-feed server failed to start"
+          echo "=== server log ==="
+          cat /tmp/price-feed.log
+          exit 1
+      - name: Run happy-path harness
+        working-directory: services/price-feed
+        env:
+          PRIVATE_KEY: 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+          PAYEE_PRIVATE_KEY: 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+          RPC_URL: http://localhost:8545
+          BASE_URL: http://localhost:3000
+        run: node scripts/happy-path.mjs

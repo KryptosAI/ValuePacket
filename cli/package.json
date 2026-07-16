@@ -1,6 +1,6 @@
 {
   "name": "@valuepacket/cli",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "ValuePacket CLI — the payment protocol for autonomous agents",
   "type": "module",
   "main": "dist/index.js",
@@ -63,7 +63,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@valuepacket/sdk": "^0.2.0",
+    "@valuepacket/sdk": "^0.2.2",
     "commander": "^13.0.0",
     "viem": "^2.17.0"
   },
