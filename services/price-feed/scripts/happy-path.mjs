@@ -20,8 +20,10 @@ if (!PAYER_PK || !PAYEE_PK || !CHANNEL_ADDR || !USDC_ADDR) {
   process.exit(1);
 }
 
-const chain = { id: 31337, name: 'Anvil', nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: [RPC] } } };
 const transport = http(RPC);
+const bootstrapClient = createPublicClient({ transport });
+const chainId = await bootstrapClient.getChainId();
+const chain = { id: chainId, name: `Chain ${chainId}`, nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: [RPC] } } };
 const publicClient = createPublicClient({ chain, transport });
 
 const payerAccount = privateKeyToAccount(PAYER_PK);
@@ -40,7 +42,7 @@ const PAYMENT_PROOF_TYPE = {
     { name: 'nonce', type: 'uint256' },
   ],
 };
-const DOMAIN = { name: 'ValuePacket', version: '1', chainId: 31337, verifyingContract: CHANNEL_ADDR };
+const DOMAIN = { name: 'ValuePacket', version: '1', chainId, verifyingContract: CHANNEL_ADDR };
 
 const PChAbi = parseAbi([
   'function openChannel(address payee,address token,uint256 deposit,uint32 expiresAt,address policy,bytes metadata) returns (uint256)',
@@ -52,6 +54,7 @@ const PChAbi = parseAbi([
 ]);
 const erc20Abi = parseAbi([
   'function approve(address spender, uint256 amount) returns (bool)',
+  'function allowance(address owner, address spender) view returns (uint256)',
   'function balanceOf(address account) view returns (uint256)',
 ]);
 
@@ -62,7 +65,12 @@ const results = [];
 async function check(step, expected, fn) {
   try {
     const actual = await fn();
-    const pass = typeof expected === 'function' ? expected(actual) : actual === expected || JSON.stringify(actual) === JSON.stringify(expected);
+    const pass = typeof expected === 'function'
+      ? expected(actual)
+      : actual === expected
+        || ((typeof actual === 'bigint' || typeof expected === 'bigint')
+          ? String(actual) === String(expected)
+          : JSON.stringify(actual) === JSON.stringify(expected));
     results.push({ step, expected: typeof expected === 'function' ? 'custom' : String(expected), actual: String(actual).slice(0,80), pass });
     if (!pass) { console.error(`  FAIL step ${step}: expected ${expected}, got ${actual}`); process.exit(1); }
     return actual;
@@ -80,7 +88,11 @@ console.log(`  Payer:    ${fmtHex(payerAccount.address)}`);
 console.log(`  Payee:    ${fmtHex(payeeAccount.address)}`);
 console.log(`  Channel:  ${fmtHex(CHANNEL_ADDR)}`);
 console.log(`  USDC:     ${fmtHex(USDC_ADDR)}`);
+console.log(`  Chain ID: ${chainId}`);
 console.log('');
+
+const payerBalanceBefore = await publicClient.readContract({ address: USDC_ADDR, abi: erc20Abi, functionName: 'balanceOf', args: [payerAccount.address] });
+const payeeBalanceBefore = await publicClient.readContract({ address: USDC_ADDR, abi: erc20Abi, functionName: 'balanceOf', args: [payeeAccount.address] });
 
 // Step 1: approve
 console.log('[1/8] approve USDC spend...');
@@ -89,9 +101,17 @@ const approveTx = await payerWallet.writeContract({
 });
 await publicClient.waitForTransactionReceipt({ hash: approveTx });
 await check('1-approve', h => h.startsWith('0x') && h.length === 66, () => approveTx);
+let observedAllowance = 0n;
+for (let attempt = 0; attempt < 12; attempt += 1) {
+  observedAllowance = await publicClient.readContract({ address: USDC_ADDR, abi: erc20Abi, functionName: 'allowance', args: [payerAccount.address, CHANNEL_ADDR] });
+  if (observedAllowance >= DEPOSIT) break;
+  await new Promise(resolve => setTimeout(resolve, 1000));
+}
+await check('1-allowance-observed', value => value >= DEPOSIT, () => observedAllowance);
 
 // Step 2: openChannel
 console.log('[2/8] openChannel...');
+const countBefore = await publicClient.readContract({ address: CHANNEL_ADDR, abi: PChAbi, functionName: 'getChannelCount' });
 const expiresAt = Math.floor(Date.now() / 1000) + 3600;
 const openHash = await payerWallet.writeContract({
   address: CHANNEL_ADDR, abi: PChAbi, functionName: 'openChannel',
@@ -102,8 +122,13 @@ const receipt = await publicClient.waitForTransactionReceipt({ hash: openHash })
 const channelIdLog = receipt.logs.find(l => l.address.toLowerCase() === CHANNEL_ADDR.toLowerCase());
 const channelId = channelIdLog ? BigInt(channelIdLog.topics[1]) : 0n;
 
-const count = await publicClient.readContract({ address: CHANNEL_ADDR, abi: PChAbi, functionName: 'getChannelCount' });
-await check('2-openChannel-count', cnt => cnt > 0n, () => count);
+let count = countBefore;
+for (let attempt = 0; attempt < 12; attempt += 1) {
+  count = await publicClient.readContract({ address: CHANNEL_ADDR, abi: PChAbi, functionName: 'getChannelCount' });
+  if (count > countBefore) break;
+  await new Promise(resolve => setTimeout(resolve, 1000));
+}
+await check('2-openChannel-count', cnt => cnt > countBefore, () => count);
 console.log(`  channelId=${channelId}, count=${count}`);
 
 // Step 3: first paid request
@@ -181,14 +206,25 @@ const closeHash = await payeeWallet.writeContract({
 });
 await publicClient.waitForTransactionReceipt({ hash: closeHash });
 
-const spent_onchain = final.spent;
-const status_onchain = final.status;
+let final;
+for (let attempt = 0; attempt < 12; attempt += 1) {
+  final = await publicClient.readContract({ address: CHANNEL_ADDR, abi: PChAbi, functionName: 'getChannel', args: [channelId] });
+  const observedSpent = final.spent !== undefined ? final.spent : final[4];
+  const observedStatus = final.status !== undefined ? final.status : final[9];
+  if (BigInt(observedSpent) === spent2 && Number(observedStatus) === 1) break;
+  await new Promise(resolve => setTimeout(resolve, 1000));
+}
+const spent_onchain = final.spent !== undefined ? final.spent : final[4];
+const payerBalanceAfter = await publicClient.readContract({ address: USDC_ADDR, abi: erc20Abi, functionName: 'balanceOf', args: [payerAccount.address] });
+const payeeBalanceAfter = await publicClient.readContract({ address: USDC_ADDR, abi: erc20Abi, functionName: 'balanceOf', args: [payeeAccount.address] });
 await check('7-settlement-spent', spent2, () => BigInt(spent_onchain));
+await check('7-settlement-payee-paid', spent2, () => payeeBalanceAfter - payeeBalanceBefore);
+await check('7-settlement-payer-refunded', payerBalanceBefore - spent2, () => payerBalanceAfter);
 console.log(`  settled: spent=${spent_onchain.toString()}, status=Settled`);
 
 // Step 8: verify on-chain state
 console.log('[8/8] final state...');
-const ch = await publicClient.readContract({ address: CHANNEL_ADDR, abi: PChAbi, functionName: 'getChannel', args: [channelId] });
+const ch = final;
 const chStatus = ch.status !== undefined ? ch.status : ch[9];
 await check('8-status-settled', 1, () => Number(chStatus));
 console.log('');
