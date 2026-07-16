@@ -447,6 +447,10 @@ const USDC_FUND = usdcToWei(1000); // $1000 USDC per account
 
 describe('ValuePacket Extensions Integration', () => {
   beforeAll(async () => {
+    // ── Kill stale anvil from previous runs ────────────────────────
+    execSync('pkill -f anvil 2>/dev/null || true');
+    await new Promise((r) => setTimeout(r, 2000));
+
     // ── Start anvil ──────────────────────────────────────────────────
     anvilProcess = spawn('anvil', ['--port', ANVIL_PORT, '--chain-id', '31337'], {
       stdio: 'pipe',

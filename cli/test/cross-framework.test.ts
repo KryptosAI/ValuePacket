@@ -254,6 +254,10 @@ const USDC_AMOUNT = usdcToWei(500); // $500 USDC
 
 describe('Cross-Framework Integration: ElizaOS ↔ G.A.M.E ↔ Raw SDK', () => {
   beforeAll(async () => {
+    // ── Kill stale anvil from previous runs ─────────────────────────
+    execSync('pkill -f anvil 2>/dev/null || true');
+    await new Promise((r) => setTimeout(r, 2000));
+
     // ── Start anvil ────────────────────────────────────────────────
     anvilProcess = spawn('anvil', ['--port', ANVIL_PORT, '--chain-id', '31337'], {
       stdio: 'pipe',

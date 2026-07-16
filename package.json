@@ -6,7 +6,8 @@
     "cli",
     "indexer",
     "adapters/eliza",
-    "adapters/game"
+    "adapters/game",
+    "services/price-feed"
   ],
   "scripts": {
     "build": "npm run build --workspaces",

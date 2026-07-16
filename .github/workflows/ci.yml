@@ -80,11 +80,11 @@ jobs:
           forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast 2>&1 | tee /tmp/forge-output.txt
       - name: Parse deployed addresses
         run: |
-          MOCK_USDC=$(grep -oP 'MOCK_USDC=\s*\K0x[a-fA-F0-9]+' /tmp/forge-output.txt)
-          PAYMENT_CHANNEL=$(grep -oP 'PAYMENT_CHANNEL=\s*\K0x[a-fA-F0-9]+' /tmp/forge-output.txt)
-          SERVICE_REGISTRY=$(grep -oP 'SERVICE_REGISTRY=\s*\K0x[a-fA-F0-9]+' /tmp/forge-output.txt)
-          SPENDING_POLICY=$(grep -oP 'SPENDING_POLICY=\s*\K0x[a-fA-F0-9]+' /tmp/forge-output.txt)
-          CHAIN_ID=$(grep -oP 'CHAIN_ID=\s*\K[0-9]+' /tmp/forge-output.txt)
+          MOCK_USDC=$(sed -nE 's/.*MOCK_USDC=\s*(0x[a-fA-F0-9]{40}).*/\1/p' /tmp/forge-output.txt | head -1)
+          PAYMENT_CHANNEL=$(sed -nE 's/.*PAYMENT_CHANNEL=\s*(0x[a-fA-F0-9]{40}).*/\1/p' /tmp/forge-output.txt | head -1)
+          SERVICE_REGISTRY=$(sed -nE 's/.*SERVICE_REGISTRY=\s*(0x[a-fA-F0-9]{40}).*/\1/p' /tmp/forge-output.txt | head -1)
+          SPENDING_POLICY=$(sed -nE 's/.*SPENDING_POLICY=\s*(0x[a-fA-F0-9]{40}).*/\1/p' /tmp/forge-output.txt | head -1)
+          CHAIN_ID=$(sed -nE 's/.*CHAIN_ID=\s*([0-9]+).*/\1/p' /tmp/forge-output.txt | head -1)
 
           cat > contracts/deployments/local.json <<JSONEOF
           {

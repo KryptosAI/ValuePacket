@@ -96,15 +96,15 @@ contract CrossChainSettlementTest is Test {
         settlement.deposit(paymentId, _payee, amount, address(usdc));
     }
 
-    /// @notice Simulate Axelar GMP delivery via _execute entry point
+    /// @notice Simulate Axelar GMP delivery — calls settleFromSource directly
+    /// since the test contract IS the gateway (deployed with address(this))
     function _relayExecute(
         bytes32 paymentId,
         uint256 channelId,
         uint256 spent,
         bytes memory signature
     ) internal {
-        bytes memory payload = abi.encode(paymentId, channelId, spent, signature);
-        settlement._execute("base-sepolia", "0x1234", payload);
+        settlement.settleFromSource(paymentId, channelId, spent, signature);
     }
 
     // ─── Deposit ────────────────────────────────────────────────────────────

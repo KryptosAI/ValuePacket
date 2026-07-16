@@ -124,6 +124,10 @@ let deployerWallet: WalletClient;
 
 describe('Integration: Full Local Demo Flow', () => {
   beforeAll(async () => {
+    // ── Step 0: Kill any stale anvil from previous runs ───────────
+    execSync('pkill -f anvil 2>/dev/null || true');
+    await new Promise((r) => setTimeout(r, 2000));
+
     // ── Step 1: Start anvil ────────────────────────────────────────
     anvilProcess = spawn('anvil', ['--port', ANVIL_PORT, '--chain-id', '31337'], {
       stdio: 'pipe',

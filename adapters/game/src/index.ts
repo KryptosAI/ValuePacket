@@ -6,7 +6,7 @@ import {
   type ServiceDescriptor,
   type Channel,
   ChannelStatus,
-} from '@williamweishuhn/valuepacket-sdk';
+} from '@valuepacket/sdk';
 import { createPublicClient, http, type WalletClient, type Address, type PublicClient } from 'viem';
 import { getAddress } from 'viem';
 
@@ -129,7 +129,7 @@ export interface ActiveChannelInfo {
  *
  * @example
  * ```typescript
- * import { AgentSettlementWorker } from '@williamweishuhn/valuepacket-adapter-game';
+ * import { AgentSettlementWorker } from '@valuepacket/adapter-game';
  * import { createWalletClient, http, privateKeyToAccount } from 'viem';
  * import { base } from 'viem/chains';
  *
@@ -651,7 +651,7 @@ export class AgentSettlementWorker {
  *
  * @example
  * ```typescript
- * import { createAgentPay } from '@williamweishuhn/valuepacket-adapter-game';
+ * import { createAgentPay } from '@valuepacket/adapter-game';
  *
  * const worker = createAgentPay({
  *   wallet: myWallet,

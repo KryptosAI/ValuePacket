@@ -1,7 +1,7 @@
 import type { Address, Hash, PublicClient, WalletClient } from 'viem';
 import { createPublicClient, createWalletClient, http, parseEther, keccak256, toHex } from 'viem';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { signChannelClose, signPaymentProof, hashRequest, createPaymentProofHeader } from '@williamweishuhn/valuepacket-sdk';
+import { signChannelClose, signPaymentProof, hashRequest, createPaymentProofHeader } from '@valuepacket/sdk';
 
 import { log, formatAddress, formatUsdc, usdcToWei, weiToUsdc, ZERO_ADDRESS } from './utils.js';
 import { startServer, type ChannelServer } from './server.js';
