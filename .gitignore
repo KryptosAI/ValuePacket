@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Forge artifacts
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/deployments/
+contracts/lib/
+
+# Build output
+sdk/dist/
+cli/dist/
+adapters/*/dist/
+indexer/dist/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+/tmp/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Other projects in workspace
+proofpack/
+veros-core/
+veros-actuarial/
+veros-verify/
+opencontext/
+openchart/
+mcp-observatory-clone/
+agent-observability/
+.opencode/
+.mcp-observatory/
+.opencontext/
+
+# Test anvil logs
+anvil-local.log

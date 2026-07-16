@@ -1,0 +1,53 @@
+{
+  "name": "@valuepacket/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the ValuePacket Protocol — on-chain payment channels for AI agent services",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --sourcemap",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "tsup src/index.ts --format esm,cjs --dts --watch --sourcemap"
+  },
+  "keywords": [
+    "agent",
+    "settlement",
+    "payment",
+    "channel",
+    "blockchain",
+    "ethereum",
+    "web3",
+    "ai"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "optionalDependencies": {
+    "ipfs-http-client": "^60.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "viem": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

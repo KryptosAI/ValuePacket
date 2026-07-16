@@ -1,0 +1,46 @@
+{
+  "protocol": "valuepacket/v1",
+  "service": {
+    "id": "prediction-feed",
+    "name": "ETH Prediction Market Feed",
+    "description": "Real-time market predictions and analysis for crypto assets",
+    "version": "1.0.0"
+  },
+  "provider": {
+    "framework": "custom",
+    "contact": "demo@local"
+  },
+  "api": {
+    "endpoint": "http://localhost:{port}/services/prediction-feed",
+    "method": "POST",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "market": { "type": "string", "description": "Market identifier e.g. ETH/USDC" },
+        "metric": { "enum": ["implied_volatility", "price_feed", "sentiment"] }
+      },
+      "required": ["market"]
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "impliedVolatility": { "type": "number" },
+        "price": { "type": "number" },
+        "sentiment": { "type": "number" },
+        "timestamp": { "type": "number" },
+        "confidence": { "type": "number" }
+      }
+    }
+  },
+  "pricing": {
+    "token": "0x0000000000000000000000000000000000000000",
+    "pricePerRequest": "50000",
+    "minChannelDeposit": "5000000",
+    "minChannelDuration": 3600
+  },
+  "sla": {
+    "maxResponseMs": 2000,
+    "uptime": "0.99",
+    "rateLimit": "100/min"
+  }
+}

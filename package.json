@@ -1,0 +1,31 @@
+{
+  "name": "valuepacket",
+  "private": true,
+  "workspaces": [
+    "sdk",
+    "cli",
+    "indexer",
+    "adapters/eliza",
+    "adapters/game"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present",
+    "demo:local": "bash scripts/local-demo.sh",
+    "demo:anvil": "bash scripts/local-demo.sh",
+    "deploy:local": "cd contracts && forge script script/Deploy.s.sol --broadcast --rpc-url http://localhost:8545",
+    "anvil": "anvil --host 0.0.0.0 --port 8545 --chain-id 31337"
+  },
+  "keywords": [
+    "agent",
+    "settlement",
+    "payment",
+    "channel",
+    "blockchain",
+    "ethereum",
+    "web3",
+    "ai"
+  ],
+  "license": "MIT"
+}
