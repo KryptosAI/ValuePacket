@@ -10,6 +10,7 @@ import {
   type Hash,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
+import { SubscriptionSession } from '@valuepacket/sdk';
 
 import { log, formatAddress, formatUsdc, usdcToWei, weiToUsdc, truncate, ZERO_ADDRESS } from './utils.js';
 import { runDemo, type DemoConfig } from './demo.js';
@@ -325,95 +326,82 @@ program
 
 program
   .command('subscribe')
-  .description('Open a channel and start consuming a service')
-  .requiredOption('--provider <address>', 'Provider address')
-  .requiredOption('--deposit <number>', 'Total deposit in USDC')
-  .option('--expires <hours>', 'Channel expiry in hours', '24')
-  .option('--requests <number>', 'Number of requests to make', '10')
-  .option('--interval <ms>', 'Interval between requests in ms', '1000')
-  .option('--body <json>', 'Request body as JSON string')
-  .option('--endpoint <url>', 'Provider endpoint URL', 'http://localhost:3456')
+  .description('Open a subscription (auto-renewing payment channel)')
+  .requiredOption('--provider <address>', 'Payee address')
+  .requiredOption('--amount <number>', 'USD per period (e.g., 5 for $5/month)')
+  .requiredOption('--period <days>', 'Period in days (e.g., 30 for monthly)')
+  .option('--max-periods <n>', 'Max renewals (0 = unlimited)', '0')
+  .option('--deposit <number>', 'Initial deposit (defaults to amount × 2)')
   .option('--rpc <url>', 'RPC URL', process.env.RPC_URL || 'https://sepolia.base.org')
-  .option('--private-key <key>', 'Agent private key (0x-prefixed)', process.env.AGENT_PRIVATE_KEY)
+  .option('--private-key <key>', 'Payer private key (0x-prefixed)', process.env.AGENT_PRIVATE_KEY)
   .option(
-    '--channels <address>',
-    'PaymentChannel contract address',
-    process.env.PAYMENT_CHANNEL_ADDRESS,
+    '--subscription-manager <address>',
+    'SubscriptionManager contract address',
+    process.env.SUBSCRIPTION_MANAGER_ADDRESS,
   )
-  .option('--token <address>', 'Token address (USDC)', USDC_BASE_SEPOLIA)
+  .option('--token <address>', 'USDC token address', process.env.USDC_TOKEN_ADDRESS || USDC_BASE_SEPOLIA)
   .action(async (options) => {
     const {
       provider,
-      deposit,
-      expires,
-      requests,
-      interval,
-      body,
-      endpoint,
+      amount,
+      period,
+      maxPeriods,
+      deposit: depositOpt,
       rpc,
       privateKey,
-      channels,
+      subscriptionManager,
       token,
     } = options;
 
     if (!privateKey) {
-      log('✗ Error: --private-key is required.');
+      log('✗ Error: --private-key is required. Set AGENT_PRIVATE_KEY env variable or pass --private-key.');
       process.exit(1);
     }
-    if (!channels || channels === PAYMENT_CHANNEL_ADDRESS_DEFAULT) {
-      log('✗ Error: --channels is required.');
+    if (!subscriptionManager) {
+      log('✗ Error: --subscription-manager is required. Set SUBSCRIPTION_MANAGER_ADDRESS env variable or pass --subscription-manager.');
       process.exit(1);
     }
 
     const key = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
-    const depositAmount = usdcToWei(Number(deposit));
-    const expiresIn = Number(expires) * 3600;
-    const requestCount = Number(requests);
-    const intervalMs = Number(interval);
-    const channelAddress = channels as Address;
-    const tokenAddress = token as Address;
-    const providerAddress = provider as Address;
+    const amountUsd = Number(amount);
+    const periodDays = Number(period);
+    const maxP = Number(maxPeriods);
+    const depositAmount = depositOpt ? Number(depositOpt) : amountUsd * 2;
 
-    let requestBody: Record<string, unknown>;
-    if (body) {
-      try {
-        requestBody = JSON.parse(body);
-      } catch {
-        log('✗ Error: Invalid --body JSON');
-        process.exit(1);
-      }
-    } else {
-      requestBody = { type: 'prediction-feed', input: { asset: 'ETH-USD' } };
+    if (amountUsd <= 0) {
+      log('✗ Error: --amount must be positive');
+      process.exit(1);
     }
+    if (periodDays <= 0) {
+      log('✗ Error: --period must be positive');
+      process.exit(1);
+    }
+
+    const amountWei = usdcToWei(amountUsd);
+    const depositWei = usdcToWei(depositAmount);
 
     try {
       const account = privateKeyToAccount(key as Hash);
       const chain = getChain(rpc);
-      const publicClient = createPublicClient({
-        chain,
-        transport: http(rpc),
-      });
-      const walletClient = createWalletClient({
-        chain,
-        transport: http(rpc),
-        account,
-      });
+      const publicClient = createPublicClient({ chain, transport: http(rpc) });
+      const walletClient = createWalletClient({ chain, transport: http(rpc), account });
+      const tokenAddress = token as Address;
+      const managerAddress = subscriptionManager as Address;
 
-      // Approve USDC
       const allowance = (await publicClient.readContract({
         address: tokenAddress,
         abi: erc20Abi,
         functionName: 'allowance',
-        args: [account.address, channelAddress],
+        args: [account.address, managerAddress],
       })) as unknown as bigint;
 
-      if (allowance < depositAmount) {
-        log(`Approving ${formatUsdc(depositAmount)} USDC spending...`);
+      if (allowance < depositWei) {
+        log(`Approving ${formatUsdc(depositWei)} USDC for SubscriptionManager...`);
         const approveHash = await walletClient.writeContract({
           address: tokenAddress,
           abi: erc20Abi,
           functionName: 'approve',
-          args: [channelAddress, depositAmount],
+          args: [managerAddress, depositWei],
           chain,
           account,
         });
@@ -421,134 +409,214 @@ program
         log('✓ USDC approved');
       }
 
-      // Open channel
-      const now = Math.floor(Date.now() / 1000);
-      const expiresAt = now + expiresIn;
-
-      log(`Opening channel: ${formatUsdc(depositAmount)} USDC, ${expires}hr expiry...`);
-
-      const openHash = await walletClient.writeContract({
-        address: channelAddress,
-        abi: paymentChannelAbi,
-        functionName: 'openChannel',
-        args: [providerAddress, tokenAddress, depositAmount, expiresAt, ZERO_ADDRESS, '0x'],
-        chain,
-        account,
+      const session = new SubscriptionSession({
+        walletClient,
+        publicClient,
+        subscriptionManagerAddress: managerAddress,
+        tokenAddress,
       });
 
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: openHash });
+      log(`Opening subscription: ${formatUsdc(amountWei)} every ${periodDays} days...`);
 
-      const { keccak256, toHex } = await import('viem');
-      const openTopic = keccak256(
-        toHex('ChannelOpened(uint256,address,address,address,uint256,uint32)'),
-      );
-      const eventLog = receipt.logs.find(
-        (l) =>
-          l.address.toLowerCase() === channelAddress.toLowerCase() &&
-          l.topics[0] === openTopic,
-      );
-
-      let channelId = 1n;
-      if (eventLog && eventLog.topics[1]) {
-        channelId = BigInt(eventLog.topics[1]);
-      }
-
-      log(`✓ Channel #${channelId} opened`);
-
-      // Make requests
-      log('');
-      log(`Making ${requestCount} requests to ${endpoint}...`);
-
-      const { signPaymentProof, createPaymentProofHeader } = await import(
-        '@valuepacket/sdk'
-      );
-
-      const latencies: number[] = [];
-      const results: string[] = [];
-
-      for (let i = 1; i <= requestCount; i++) {
-        const cumulativeSpent = BigInt(i) * (depositAmount / BigInt(requestCount));
-        const nonce = BigInt(Math.floor(Date.now() / 1000) * 1000 + i);
-
-        const proofSig = await signPaymentProof(
-          walletClient,
-          channelAddress,
-          channelId,
-          cumulativeSpent,
-          requestBody,
-          nonce,
-        );
-
-        const proofHeader = createPaymentProofHeader(
-          channelId,
-          cumulativeSpent,
-          requestBody,
-          nonce,
-          proofSig,
-        );
-
-        const start = performance.now();
-
-        try {
-          const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-payment-proof': JSON.stringify(proofHeader),
-            },
-            body: JSON.stringify(requestBody),
-          });
-
-          const respText = await res.text();
-          results.push(respText);
-          latencies.push(performance.now() - start);
-
-          log(`→ Request ${i}/${requestCount}: ${res.status} (${Math.round(latencies[latencies.length - 1])}ms)`);
-        } catch (err: unknown) {
-          log(`→ Request ${i}/${requestCount}: Error - ${err instanceof Error ? err.message : String(err)}`);
-          results.push(`Error: ${err instanceof Error ? err.message : String(err)}`);
-        }
-
-        if (i < requestCount) {
-          await new Promise<void>((resolve) => setTimeout(resolve, intervalMs));
-        }
-      }
-
-      // Close channel
-      log('');
-      const totalSpent = BigInt(requestCount) * (depositAmount / BigInt(requestCount));
-
-      const { signChannelClose } = await import('@valuepacket/sdk');
-      const closeSig = await signChannelClose(
-        walletClient,
-        channelAddress,
-        channelId,
-        totalSpent,
-      );
-
-      log('Closing channel...');
-      log(`  NOTE: Only the payee can submit closeChannel. The signature has been generated.`);
-      log(`  Signature: ${closeSig}`);
-      log(`  Have the provider call closeChannel(${channelId}, ${totalSpent}, <this-signature>)`);
-
-      const avgLatency = latencies.length > 0
-        ? Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length)
-        : 0;
+      const result = await session.subscribe({
+        provider: provider as Address,
+        amount: amountWei,
+        periodDays,
+        maxPeriods: maxP,
+        deposit: depositWei,
+        token: tokenAddress,
+      });
 
       log('');
-      log('═══════════════════════════════════════════');
-      log('            SUBSCRIPTION SUMMARY');
-      log('───────────────────────────────────────────');
-      log(`  Channel:     #${channelId}`);
-      log(`  Deposit:     ${formatUsdc(depositAmount)} USDC`);
-      log(`  Spent:       ${formatUsdc(totalSpent)} USDC`);
-      log(`  Refundable:  ${formatUsdc(depositAmount - totalSpent)} USDC`);
-      log(`  Requests:    ${requestCount}`);
-      log(`  Avg latency: ${avgLatency}ms`);
-      log('═══════════════════════════════════════════');
+      log(`Subscription #${result.subscriptionId} created:`);
+      log(`  Provider: ${result.provider}`);
+      log(`  Amount:   ${formatUsdc(result.amount)} every ${result.periodDays} days`);
+      log(`  Deposited: ${formatUsdc(result.deposit)}`);
+      log(`  Channel:  #${result.channelId}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       log(`✗ Subscribe failed: ${msg}`);
+      process.exit(1);
+    }
+  });
+
+// ─── subscriptions ─────────────────────────────────────────
+
+const subscriptionsCmd = program
+  .command('subscriptions')
+  .description('Manage active subscriptions');
+
+subscriptionsCmd
+  .command('list')
+  .description('List active subscriptions for the current wallet')
+  .option('--rpc <url>', 'RPC URL', process.env.RPC_URL || 'https://sepolia.base.org')
+  .option('--private-key <key>', 'Wallet private key (0x-prefixed)', process.env.AGENT_PRIVATE_KEY)
+  .option(
+    '--subscription-manager <address>',
+    'SubscriptionManager contract address',
+    process.env.SUBSCRIPTION_MANAGER_ADDRESS,
+  )
+  .option('--token <address>', 'USDC token address', process.env.USDC_TOKEN_ADDRESS || USDC_BASE_SEPOLIA)
+  .action(async (options) => {
+    const { rpc, privateKey, subscriptionManager, token } = options;
+
+    if (!privateKey) {
+      log('✗ Error: --private-key is required.');
+      process.exit(1);
+    }
+    if (!subscriptionManager) {
+      log('✗ Error: --subscription-manager is required.');
+      process.exit(1);
+    }
+
+    const key = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
+    const tokenAddress = token as Address;
+    const managerAddress = subscriptionManager as Address;
+
+    try {
+      const account = privateKeyToAccount(key as Hash);
+      const chain = getChain(rpc);
+      const publicClient = createPublicClient({ chain, transport: http(rpc) });
+      const walletClient = createWalletClient({ chain, transport: http(rpc), account });
+
+      const session = new SubscriptionSession({
+        walletClient,
+        publicClient,
+        subscriptionManagerAddress: managerAddress,
+        tokenAddress,
+      });
+
+      const subs = await session.listSubscriptions(account.address);
+
+      if (subs.length === 0) {
+        log('No active subscriptions found.');
+        return;
+      }
+
+      log('');
+      log('┌──────┬───────────┬──────────────────────────┬──────────────┬───────────────┬────────┐');
+      log('│  #   │ Provider  │ Amount / Period           │ Remaining    │ Max Periods   │ Active │');
+      log('├──────┼───────────┼──────────────────────────┼──────────────┼───────────────┼────────┤');
+
+      subs.forEach((s, idx) => {
+        const provider = formatAddress(s.provider);
+        const amount = formatUsdc(s.amount).padStart(12);
+        const period = `${s.periodDays}d`.padStart(4);
+        const remaining = formatUsdc(s.deposit).padStart(12);
+        const maxP = s.maxPeriods === 0 ? 'unlimited'.padEnd(13) : String(s.maxPeriods).padEnd(13);
+        const active = s.active ? 'Yes'.padEnd(6) : 'No'.padEnd(6);
+        log(`│ ${String(idx + 1).padEnd(4)} │ ${provider.padEnd(9)} │ ${amount} / ${period}     │ ${remaining} │ ${maxP} │ ${active} │`);
+      });
+
+      log('└──────┴───────────┴──────────────────────────┴──────────────┴───────────────┴────────┘');
+      log(`\n${subs.length} subscription(s) found.`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`✗ List failed: ${msg}`);
+      process.exit(1);
+    }
+  });
+
+subscriptionsCmd
+  .command('cancel <subscriptionId>')
+  .description('Cancel a subscription and refund remaining balance')
+  .option('--rpc <url>', 'RPC URL', process.env.RPC_URL || 'https://sepolia.base.org')
+  .option('--private-key <key>', 'Wallet private key (0x-prefixed)', process.env.AGENT_PRIVATE_KEY)
+  .option(
+    '--subscription-manager <address>',
+    'SubscriptionManager contract address',
+    process.env.SUBSCRIPTION_MANAGER_ADDRESS,
+  )
+  .option('--token <address>', 'USDC token address', process.env.USDC_TOKEN_ADDRESS || USDC_BASE_SEPOLIA)
+  .action(async (subscriptionId: string, options) => {
+    const { rpc, privateKey, subscriptionManager, token } = options;
+
+    if (!privateKey) {
+      log('✗ Error: --private-key is required.');
+      process.exit(1);
+    }
+    if (!subscriptionManager) {
+      log('✗ Error: --subscription-manager is required.');
+      process.exit(1);
+    }
+
+    const id = BigInt(subscriptionId);
+    const key = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
+    const tokenAddress = token as Address;
+    const managerAddress = subscriptionManager as Address;
+
+    try {
+      const account = privateKeyToAccount(key as Hash);
+      const chain = getChain(rpc);
+      const publicClient = createPublicClient({ chain, transport: http(rpc) });
+      const walletClient = createWalletClient({ chain, transport: http(rpc), account });
+
+      const session = new SubscriptionSession({
+        walletClient,
+        publicClient,
+        subscriptionManagerAddress: managerAddress,
+        tokenAddress,
+      });
+
+      const result = await session.cancelSubscription(id);
+
+      log(`✓ Subscription #${subscriptionId} cancelled.`);
+      log(`  Refunded: ${formatUsdc(result.refunded)}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`✗ Cancel failed: ${msg}`);
+      process.exit(1);
+    }
+  });
+
+subscriptionsCmd
+  .command('renew <subscriptionId>')
+  .description('Manually trigger renewal (payee-side)')
+  .option('--rpc <url>', 'RPC URL', process.env.RPC_URL || 'https://sepolia.base.org')
+  .option('--private-key <key>', 'Wallet private key (0x-prefixed)', process.env.AGENT_PRIVATE_KEY)
+  .option(
+    '--subscription-manager <address>',
+    'SubscriptionManager contract address',
+    process.env.SUBSCRIPTION_MANAGER_ADDRESS,
+  )
+  .option('--token <address>', 'USDC token address', process.env.USDC_TOKEN_ADDRESS || USDC_BASE_SEPOLIA)
+  .action(async (subscriptionId: string, options) => {
+    const { rpc, privateKey, subscriptionManager, token } = options;
+
+    if (!privateKey) {
+      log('✗ Error: --private-key is required.');
+      process.exit(1);
+    }
+    if (!subscriptionManager) {
+      log('✗ Error: --subscription-manager is required.');
+      process.exit(1);
+    }
+
+    const id = BigInt(subscriptionId);
+    const key = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
+    const tokenAddress = token as Address;
+    const managerAddress = subscriptionManager as Address;
+
+    try {
+      const account = privateKeyToAccount(key as Hash);
+      const chain = getChain(rpc);
+      const publicClient = createPublicClient({ chain, transport: http(rpc) });
+      const walletClient = createWalletClient({ chain, transport: http(rpc), account });
+
+      const session = new SubscriptionSession({
+        walletClient,
+        publicClient,
+        subscriptionManagerAddress: managerAddress,
+        tokenAddress,
+      });
+
+      const result = await session.renewSubscription(id);
+
+      log(`✓ Subscription #${subscriptionId} renewed.`);
+      log(`  Channel: #${result.channelId}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`✗ Renew failed: ${msg}`);
       process.exit(1);
     }
   });

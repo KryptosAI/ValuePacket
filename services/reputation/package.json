@@ -1,0 +1,17 @@
+{
+  "name": "@valuepacket/service-reputation",
+  "version": "0.2.2",
+  "type": "module",
+  "scripts": {
+    "start": "tsx --env-file=.env src/server.ts",
+    "dev": "tsx watch --env-file=.env src/server.ts"
+  },
+  "dependencies": {
+    "@valuepacket/sdk": "^0.2.2",
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -3,6 +3,7 @@
 export { AgentPay } from './client.js';
 export { ChannelSession } from './channel.js';
 export { ChannelServer } from './provider.js';
+export { SubscriptionSession } from './extensions/subscription.js';
 
 export type {
   Service,
@@ -42,6 +43,13 @@ export {
 
 export type { ContractAddresses } from './contracts.js';
 
+export type { SubscriptionConfig } from './extensions/subscription.js';
+
+export {
+  SUBSCRIPTION_MANAGER_ABI,
+  SUBSCRIPTION_AUTH_TYPE,
+} from './extensions/subscription.js';
+
 export {
   AgentSettlementError,
   InsufficientFundsError,
@@ -54,6 +62,16 @@ export {
   HttpRequestError,
   TransactionFailedError,
 } from './errors.js';
+
+export {
+  rateService,
+  getProviderRatings,
+  getProviderScore,
+  InvalidRatingScoreError,
+  AttestationFailedError,
+} from './extensions/reputation.js';
+
+export type { ServiceRating } from './extensions/reputation.js';
 
 export type {
   ChannelSessionConfig,
