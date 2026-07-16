@@ -5,6 +5,7 @@ libs = ["lib"]
 solc = "0.8.24"
 evm_version = "cancun"
 ffi = true
+fs_permissions = [{ access = "read-write", path = "./deployments/" }]
 remappings = [
     "@openzeppelin/=lib/openzeppelin-contracts/",
     "forge-std/=lib/forge-std/src/"

@@ -60,10 +60,31 @@ function isLocalRpc(rpcUrl: string): boolean {
   return rpcUrl.includes('localhost') || rpcUrl.includes('127.0.0.1');
 }
 
+function isBaseSepoliaRpc(rpcUrl: string): boolean {
+  return rpcUrl.includes('sepolia.base.org') || rpcUrl.includes('base-sepolia');
+}
+
 function readLocalDeployments(): Record<string, string> | null {
   const paths = [
     resolve('contracts', 'deployments', 'local.json'),
     resolve('..', 'contracts', 'deployments', 'local.json'),
+  ];
+  for (const p of paths) {
+    if (existsSync(p)) {
+      try {
+        return JSON.parse(readFileSync(p, 'utf-8'));
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function readBaseSepoliaDeployments(): Record<string, string> | null {
+  const paths = [
+    resolve('contracts', 'deployments', 'base-sepolia.json'),
+    resolve('..', 'contracts', 'deployments', 'base-sepolia.json'),
   ];
   for (const p of paths) {
     if (existsSync(p)) {
@@ -638,6 +659,24 @@ program
         }
         mint = true;
         log(`  Using local deployments:`);
+        log(`    ServiceRegistry: ${registry}`);
+        log(`    PaymentChannel:  ${channels}`);
+        log(`    Token (USDC):    ${token}`);
+      }
+    } else if (isBaseSepoliaRpc(rpc)) {
+      log('Base Sepolia detected. Looking for Base Sepolia deployments...');
+      const sepolia = readBaseSepoliaDeployments();
+      if (sepolia) {
+        if (!registry || registry === SERVICE_REGISTRY_ADDRESS_DEFAULT) {
+          registry = sepolia.serviceRegistry;
+        }
+        if (!channels || channels === PAYMENT_CHANNEL_ADDRESS_DEFAULT) {
+          channels = sepolia.paymentChannel;
+        }
+        if (!token || token === USDC_BASE_SEPOLIA) {
+          token = sepolia.usdcToken || USDC_BASE_SEPOLIA;
+        }
+        log(`  Using Base Sepolia deployments:`);
         log(`    ServiceRegistry: ${registry}`);
         log(`    PaymentChannel:  ${channels}`);
         log(`    Token (USDC):    ${token}`);

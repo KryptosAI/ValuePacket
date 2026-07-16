@@ -1,0 +1,17 @@
+{
+  "name": "@valuepacket/service-price-feed",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts"
+  },
+  "dependencies": {
+    "@valuepacket/sdk": "*",
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0"
+  }
+}
