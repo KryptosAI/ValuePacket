@@ -1,6 +1,7 @@
 {
-  "name": "@valuepacket/adapter-game",
-  "version": "0.1.0",
+  "name": "@williamweishuhn/valuepacket-adapter-game",
+  "version": "0.1.2",
+  "description": "G.A.M.E framework adapter for ValuePacket — add payment channels to your G.A.M.E agents",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -15,8 +16,25 @@
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "dependencies": {
-    "@valuepacket/sdk": "*"
+    "@williamweishuhn/valuepacket-sdk": "^0.1.1"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KryptosAI/ValuePacket.git",
+    "directory": "adapters/game"
+  },
+  "homepage": "https://github.com/KryptosAI/ValuePacket#readme",
+  "bugs": {
+    "url": "https://github.com/KryptosAI/ValuePacket/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "tsup": "^8.3.0",

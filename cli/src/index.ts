@@ -460,7 +460,7 @@ program
       log(`Making ${requestCount} requests to ${endpoint}...`);
 
       const { signPaymentProof, createPaymentProofHeader } = await import(
-        '@valuepacket/sdk'
+        '@williamweishuhn/valuepacket-sdk'
       );
 
       const latencies: number[] = [];
@@ -518,7 +518,7 @@ program
       log('');
       const totalSpent = BigInt(requestCount) * (depositAmount / BigInt(requestCount));
 
-      const { signChannelClose } = await import('@valuepacket/sdk');
+      const { signChannelClose } = await import('@williamweishuhn/valuepacket-sdk');
       const closeSig = await signChannelClose(
         walletClient,
         channelAddress,

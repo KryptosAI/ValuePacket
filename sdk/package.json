@@ -1,6 +1,6 @@
 {
-  "name": "@valuepacket/sdk",
-  "version": "0.1.0",
+  "name": "@williamweishuhn/valuepacket-sdk",
+  "version": "0.1.2",
   "description": "TypeScript SDK for the ValuePacket Protocol — on-chain payment channels for AI agent services",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
@@ -33,6 +33,18 @@
     "ai"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KryptosAI/ValuePacket.git",
+    "directory": "sdk"
+  },
+  "homepage": "https://github.com/KryptosAI/ValuePacket#readme",
+  "bugs": {
+    "url": "https://github.com/KryptosAI/ValuePacket/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "viem": "^2.21.0"
   },

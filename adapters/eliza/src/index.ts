@@ -11,7 +11,7 @@ import {
   ChannelSession,
   type DiscoveredService,
   type ServiceDescriptor,
-} from '@valuepacket/sdk';
+} from '@williamweishuhn/valuepacket-sdk';
 import { createPublicClient, http, type WalletClient, type Address, type PublicClient } from 'viem';
 
 // ---------------------------------------------------------------------------
@@ -436,7 +436,7 @@ const agentPayProvider = {
  *
  * @example
  * ```ts
- * import { agentSettlementPlugin } from '@valuepacket/adapter-eliza';
+ * import { agentSettlementPlugin } from '@williamweishuhn/valuepacket-adapter-eliza';
  * agent.plugins.push(agentSettlementPlugin);
  * ```
  */
@@ -476,7 +476,7 @@ export interface AgentSettlementPluginConfig {
  *
  * @example
  * ```ts
- * import { createAgentSettlementPlugin } from '@valuepacket/adapter-eliza';
+ * import { createAgentSettlementPlugin } from '@williamweishuhn/valuepacket-adapter-eliza';
  *
  * const payPlugin = createAgentSettlementPlugin({
  *   wallet,

@@ -1,6 +1,7 @@
 {
-  "name": "@valuepacket/adapter-eliza",
-  "version": "0.1.0",
+  "name": "@williamweishuhn/valuepacket-adapter-eliza",
+  "version": "0.1.2",
+  "description": "ElizaOS plugin adapter for ValuePacket — add payment channels to your ElizaOS agents",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -15,11 +16,28 @@
     "build": "tsup src/index.ts --format esm,cjs --dts --clean",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "dependencies": {
-    "@valuepacket/sdk": "*"
+    "@williamweishuhn/valuepacket-sdk": "^0.1.1"
   },
   "peerDependencies": {
     "@elizaos/core": "^0.25.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KryptosAI/ValuePacket.git",
+    "directory": "adapters/eliza"
+  },
+  "homepage": "https://github.com/KryptosAI/ValuePacket#readme",
+  "bugs": {
+    "url": "https://github.com/KryptosAI/ValuePacket/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@elizaos/core": "^0.25.9",
