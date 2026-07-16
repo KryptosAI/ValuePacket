@@ -1,19 +1,61 @@
 import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { recoverTypedDataAddress, createPublicClient, http as viemHttp } from 'viem';
-import { PAYMENT_PROOF_TYPE, PAYMENT_CHANNEL_ABI } from '@valuepacket/sdk';
+import { PAYMENT_PROOF_TYPE, PAYMENT_CHANNEL_ABI } from '@williamweishuhn/valuepacket-sdk';
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
-const RPC_URL = process.env.RPC_URL || 'http://localhost:8545';
-const PAYMENT_CHANNEL_ADDRESS = process.env.PAYMENT_CHANNEL_ADDRESS;
 const VERSION = '0.1.0';
+const PORT = parseInt(process.env.PORT || '3000', 10);
+const CHAIN = process.env.CHAIN || 'base-sepolia';
 
-if (!PAYMENT_CHANNEL_ADDRESS) {
-  console.error('FATAL: PAYMENT_CHANNEL_ADDRESS environment variable is required');
+const DEFAULT_RPC_BY_CHAIN: Record<string, string> = {
+  'base-sepolia': 'https://sepolia.base.org',
+  local: 'http://localhost:8545',
+};
+
+interface DeploymentFile {
+  chainId?: number;
+  paymentChannel?: string;
+}
+
+function isPlaceholder(value: string | undefined): boolean {
+  return !value || value === '0x...' || value.trim() === '';
+}
+
+function loadDeployment(): DeploymentFile | null {
+  const explicit = process.env.DEPLOYMENT_FILE;
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidate =
+    explicit ?? resolve(here, '..', '..', '..', 'contracts', 'deployments', `${CHAIN}.json`);
+  try {
+    return JSON.parse(readFileSync(candidate, 'utf-8')) as DeploymentFile;
+  } catch {
+    return null;
+  }
+}
+
+const deployment = loadDeployment();
+
+const resolvedChannelAddress =
+  isPlaceholder(process.env.PAYMENT_CHANNEL_ADDRESS)
+    ? deployment?.paymentChannel
+    : process.env.PAYMENT_CHANNEL_ADDRESS;
+
+const RPC_URL =
+  process.env.RPC_URL || DEFAULT_RPC_BY_CHAIN[CHAIN] || 'http://localhost:8545';
+
+const EXPECTED_CHAIN_ID = deployment?.chainId;
+
+if (isPlaceholder(resolvedChannelAddress)) {
+  console.error(
+    `FATAL: PaymentChannel address unresolved. Set PAYMENT_CHANNEL_ADDRESS, or provide contracts/deployments/${CHAIN}.json`,
+  );
   process.exit(1);
 }
 
-const CHANNEL_ADDRESS = PAYMENT_CHANNEL_ADDRESS as `0x${string}`;
+const CHANNEL_ADDRESS = resolvedChannelAddress as `0x${string}`;
 const PRICE_PER_REQUEST = 1000n;
 const MIN_CHANNEL_DEPOSIT = 1_000_000n;
 const CACHE_TTL_MS = 30_000;
@@ -188,12 +230,27 @@ async function verifyAndTrackPayment(headers: PaymentHeaders): Promise<{
     signature: proof,
   });
 
-  const result = await publicClient.readContract({
-    address: CHANNEL_ADDRESS,
-    abi: PAYMENT_CHANNEL_ABI,
-    functionName: 'getChannel',
-    args: [channelId],
-  });
+  let result: unknown;
+  try {
+    result = await publicClient.readContract({
+      address: CHANNEL_ADDRESS,
+      abi: PAYMENT_CHANNEL_ABI,
+      functionName: 'getChannel',
+      args: [channelId],
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes('ChannelNotFound')) {
+      throw new PriceFeedError(`Channel ${channelId.toString()} not found on-chain`, 404);
+    }
+    if (message.includes('reverted')) {
+      throw new PriceFeedError(
+        `On-chain channel lookup reverted for channel ${channelId.toString()}`,
+        409,
+      );
+    }
+    throw err;
+  }
 
   const channel = result as unknown as ViemChannel;
 
@@ -243,6 +300,13 @@ async function verifyAndTrackPayment(headers: PaymentHeaders): Promise<{
       throw new PriceFeedError(
         `First payment ${cumulativeSpent.toString()} below price per request ${PRICE_PER_REQUEST.toString()}`,
         402,
+      );
+    }
+
+    if (channel.spent >= cumulativeSpent) {
+      throw new PriceFeedError(
+        `Payment ${cumulativeSpent.toString()} already settled (on-chain spent: ${channel.spent.toString()})`,
+        409,
       );
     }
 
@@ -441,12 +505,42 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
 server.listen(PORT, () => {
   console.log(`\n  Price Feed Agent v${VERSION}`);
   console.log(`  Listening on http://0.0.0.0:${PORT}`);
+  console.log(`  Chain: ${CHAIN}${EXPECTED_CHAIN_ID ? ` (chainId ${EXPECTED_CHAIN_ID})` : ''}`);
   console.log(`  RPC: ${RPC_URL}`);
   console.log(`  Channel contract: ${CHANNEL_ADDRESS}`);
   console.log(`  Price per request: ${PRICE_PER_REQUEST.toString()} (USDC wei)`);
   console.log(`  Min channel deposit: ${MIN_CHANNEL_DEPOSIT.toString()} (USDC wei)`);
   console.log(`  Cache TTL: ${CACHE_TTL_MS}ms\n`);
+
+  void verifyChainConnection();
 });
+
+async function verifyChainConnection(): Promise<void> {
+  try {
+    const chainId = await publicClient.getChainId();
+    if (EXPECTED_CHAIN_ID && chainId !== EXPECTED_CHAIN_ID) {
+      console.error(
+        `FATAL: RPC chainId ${chainId} does not match deployment chainId ${EXPECTED_CHAIN_ID} for '${CHAIN}'`,
+      );
+      process.exit(1);
+    }
+    const code = await publicClient.getBytecode({ address: CHANNEL_ADDRESS });
+    if (!code || code === '0x') {
+      console.error(
+        `FATAL: no contract bytecode at ${CHANNEL_ADDRESS} on chainId ${chainId}`,
+      );
+      process.exit(1);
+    }
+    console.log(
+      `[${getCurrentTimestamp()}] connected: chainId=${chainId} channel bytecode=${((code.length - 2) / 2).toString()}B`,
+    );
+  } catch (err) {
+    console.error(
+      `FATAL: cannot reach RPC ${RPC_URL}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    process.exit(1);
+  }
+}
 
 function shutdown() {
   console.log('\nShutting down...');
