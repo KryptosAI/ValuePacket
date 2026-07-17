@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "viem": "^2.0.0",
-    "@valuepacket/sdk": "^0.2.2"
+    "@valuepacket/sdk": "^0.3.0"
   },
   "devDependencies": {
     "tsx": "^4.0.0",

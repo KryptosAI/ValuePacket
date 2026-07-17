@@ -1,6 +1,6 @@
 {
   "name": "@valuepacket/sdk",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "TypeScript SDK for the ValuePacket Protocol — on-chain payment channels for AI agent services",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
