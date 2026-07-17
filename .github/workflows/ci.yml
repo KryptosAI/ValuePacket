@@ -207,6 +207,9 @@ jobs:
           node-version: 22
       - name: Install workspace dependencies
         run: npm install
+      - name: Build SDK
+        working-directory: sdk
+        run: npm run build
       - name: Install standalone service dependencies
         run: |
           npm install --prefix services/contract-audit

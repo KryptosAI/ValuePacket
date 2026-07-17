@@ -18,6 +18,8 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { PAYMENT_CHANNEL_ABI } from '../../src/contracts.js';
 
@@ -26,8 +28,29 @@ const __dirname = dirname(__filename);
 
 export const ANVIL_PORT = 8547;
 export const ANVIL_RPC = `http://127.0.0.1:${ANVIL_PORT}`;
-export const ANVIL_BIN = '/opt/homebrew/bin/anvil';
-export const FORGE_BIN = '/opt/homebrew/bin/forge';
+
+function resolveBin(name: string): string {
+  const envOverride = process.env[`${name.toUpperCase()}_BIN`];
+  if (envOverride && existsSync(envOverride)) return envOverride;
+  try {
+    const found = execSync(`command -v ${name}`, { encoding: 'utf-8' }).trim();
+    if (found) return found;
+  } catch {
+    // not on PATH; try well-known locations
+  }
+  const candidates = [
+    `/opt/homebrew/bin/${name}`,
+    `/usr/local/bin/${name}`,
+    join(homedir(), '.foundry', 'bin', name),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return name;
+}
+
+export const ANVIL_BIN = resolveBin('anvil');
+export const FORGE_BIN = resolveBin('forge');
 export const CONTRACTS_DIR = join(__dirname, '..', '..', '..', 'contracts');
 
 export const ACCOUNTS = {
