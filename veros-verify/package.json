@@ -12,7 +12,9 @@
     "bytecode": "node src/cli.js bytecode HalmosTest",
     "defihack:clone": "bash bench/defihack/setup.sh",
     "defihack:bench": "node bench/defihack/runner.js",
-    "all": "node test/e2e.js && node bench/run.js && node src/cli.js bytecode HalmosTest"
+    "all": "node test/e2e.js && node bench/run.js && node src/cli.js bytecode HalmosTest",
+    "valuepacket": "node valuepacket/run.js",
+    "valuepacket:check": "node src/cli.js check valuepacket/bindings/PaymentChannel.binding.json && node src/cli.js check valuepacket/bindings/CrossChainSettlement.binding.json && node src/cli.js check valuepacket/bindings/SubscriptionManager.binding.json"
   },
   "repository": {
     "type": "git",

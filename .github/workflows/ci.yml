@@ -19,6 +19,27 @@ jobs:
         working-directory: contracts
         run: forge test
 
+  formal-verification:
+    name: Counterflow Formal Verification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Z3
+        run: pip install z3-solver
+      - name: Counterflow — ValuePacket pool-level proofs
+        working-directory: veros-verify
+        run: |
+          node src/cli.js check valuepacket/bindings/PaymentChannel.binding.json
+          node src/cli.js check valuepacket/bindings/CrossChainSettlement.binding.json
+          node src/cli.js check valuepacket/bindings/SubscriptionManager.binding.json
+          node src/cli.js audit
+
   typescript-build:
     name: TypeScript Build
     runs-on: ubuntu-latest
