@@ -6,13 +6,17 @@
   "scripts": {
     "dev": "ponder dev",
     "start": "ponder start",
-    "build": "ponder build"
+    "codegen": "ponder codegen",
+    "build": "ponder codegen && tsc --noEmit",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-  "@ponder/core": "^0.7.17",
-  "viem": "^2.0.0"
- },
+    "hono": "^4.5.0",
+    "ponder": "0.17.0",
+    "viem": "^2.35.0"
+  },
   "devDependencies": {
+    "@types/node": "^22.0.0",
     "typescript": "^5.5.0"
   }
 }

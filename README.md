@@ -103,6 +103,18 @@ Agent-to-agent payments aren't theoretical. Olas Network has processed 13.6M A2A
 | `SpendingPolicy.sol` | Deployable, programmable spending limits |
 | `MockUSDC.sol` | Local test token (6 decimals, permissionless mint) |
 
+## Design limitations
+
+These are deliberate MVP choices, not oversights:
+
+- **No pause mechanism.** There is no emergency stop or admin kill switch. Funds only move
+  through the documented channel/subscription/escrow flows.
+- **No upgradeability.** All contracts are immutable once deployed; fixes ship as new
+  deployments, never in-place upgrades.
+- **Gas is not reimbursed.** Payers, payees, and relayers pay their own transaction costs
+  (e.g. payees pay for `renew()`, payers for `cancel()`, anyone for
+  `sweepCancelledSubscription()`).
+
 ## Try it live
 
 ValuePacket is deployed on Base Sepolia testnet:

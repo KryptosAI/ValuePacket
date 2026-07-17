@@ -130,6 +130,7 @@ const AGENT_REPUTATION_ABI = [
         name: '',
         type: 'tuple[]',
         components: [
+          { name: 'uid', type: 'bytes32' },
           { name: 'provider', type: 'address' },
           { name: 'payer', type: 'address' },
           { name: 'channelId', type: 'bytes32' },
@@ -143,12 +144,16 @@ const AGENT_REPUTATION_ABI = [
   },
   {
     type: 'function',
-    name: 'getScore',
+    name: 'getAverageScore',
     inputs: [{ name: 'provider', type: 'address' }],
-    outputs: [
-      { name: 'averageScore', type: 'uint256' },
-      { name: 'totalRatings', type: 'uint256' },
-    ],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getRatingCount',
+    inputs: [{ name: 'provider', type: 'address' }],
+    outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
   },
 ] as const;
@@ -206,12 +211,13 @@ export interface ServiceRating {
 }
 
 interface RawRating {
+  uid: `0x${string}`;
   provider: string;
   payer: string;
   channelId: `0x${string}`;
   score: number;
   comment: string;
-  timestamp: number;
+  timestamp: number | bigint;
 }
 
 // ─── Public API ────────────────────────────────────────────────────
@@ -367,7 +373,7 @@ export async function getProviderRatings(
  * @param publicClient - A PublicClient connected to the target chain.
  * @param agentReputationAddress - Address of the AgentReputation contract.
  * @param provider - The service provider address to query.
- * @returns The average score (0-10, may contain decimals) and total number of ratings.
+ * @returns The average score (integer 0-10, truncated on-chain) and total number of ratings.
  */
 export async function getProviderScore(
   publicClient: PublicClient,
@@ -375,20 +381,22 @@ export async function getProviderScore(
   provider: `0x${string}`,
 ): Promise<{ averageScore: number; totalRatings: number }> {
   try {
-    const result = (await publicClient.readContract({
-      address: agentReputationAddress,
-      abi: AGENT_REPUTATION_ABI,
-      functionName: 'getScore',
-      args: [provider],
-    })) as unknown as [bigint, bigint];
+    const [rawAverage, rawCount] = await Promise.all([
+      publicClient.readContract({
+        address: agentReputationAddress,
+        abi: AGENT_REPUTATION_ABI,
+        functionName: 'getAverageScore',
+        args: [provider],
+      }) as Promise<bigint>,
+      publicClient.readContract({
+        address: agentReputationAddress,
+        abi: AGENT_REPUTATION_ABI,
+        functionName: 'getRatingCount',
+        args: [provider],
+      }) as Promise<bigint>,
+    ]);
 
-    const rawAverage = result[0];
-    const totalRatings = Number(result[1]);
-
-    // averageScore is stored scaled by 10 (e.g. 85 = 8.5)
-    const averageScore = Number(rawAverage) / 10;
-
-    return { averageScore, totalRatings };
+    return { averageScore: Number(rawAverage), totalRatings: Number(rawCount) };
   } catch (err: unknown) {
     if (err instanceof AgentSettlementError) {
       throw err;

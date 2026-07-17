@@ -10,6 +10,9 @@ import {ISpendingPolicy} from "./interfaces/ISpendingPolicy.sol";
 
 /// @title PaymentChannel
 /// @notice Unidirectional payment channel for agent micropayments with EIP-712 settlement
+/// @dev Deliberate MVP limitations (accepted design tradeoffs, see README "Design limitations"):
+///      no pause mechanism (no emergency stop), no upgradeability (immutable once deployed),
+///      and gas is not reimbursed (payers/payees pay their own transaction costs).
 contract PaymentChannel is ReentrancyGuard {
     using SafeERC20 for IERC20;
 

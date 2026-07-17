@@ -5,6 +5,11 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
+/// @title CrossChainSettlement
+/// @notice Escrow settled with a source-chain EIP-712 ChannelClose signature relayed via Axelar
+/// @dev Deliberate MVP limitations (accepted design tradeoffs, see README "Design limitations"):
+///      no pause mechanism (no emergency stop), no upgradeability (immutable once deployed),
+///      and gas is not reimbursed (relayers and users pay their own transaction costs).
 contract CrossChainSettlement {
     using SafeERC20 for IERC20;
 

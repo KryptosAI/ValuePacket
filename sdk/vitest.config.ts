@@ -7,7 +7,9 @@ export default defineConfig({
     // Keep local/agent test runs from saturating the laptop.
     minWorkers: 1,
     maxWorkers: 2,
-    testTimeout: 30000,
+    // Multiple test files share a local anvil on tcp:8547 — never run files in parallel.
+    fileParallelism: false,
+    testTimeout: 60000,
     include: ['test/**/*.test.ts'],
   },
 });

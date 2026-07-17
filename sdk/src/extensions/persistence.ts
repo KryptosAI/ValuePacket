@@ -8,6 +8,8 @@ export interface ChannelState {
   payer: `0x${string}`;
   deposit: bigint;
   expiresAt: number;
+  /** Latest payer-signed EIP-712 ChannelClose signature, if one was provided. */
+  closeSignature?: `0x${string}`;
 }
 
 export interface ChannelStateStore {
@@ -48,6 +50,7 @@ interface SerializedChannelState {
   payer: string;
   deposit: string;
   expiresAt: number;
+  closeSignature?: string;
 }
 
 export class FileChannelStateStore implements ChannelStateStore {
@@ -77,6 +80,9 @@ export class FileChannelStateStore implements ChannelStateStore {
           payer: value.payer as `0x${string}`,
           deposit: BigInt(value.deposit),
           expiresAt: value.expiresAt,
+          ...(value.closeSignature
+            ? { closeSignature: value.closeSignature as `0x${string}` }
+            : {}),
         });
       }
     } catch {
@@ -96,6 +102,7 @@ export class FileChannelStateStore implements ChannelStateStore {
         payer: value.payer,
         deposit: value.deposit.toString(),
         expiresAt: value.expiresAt,
+        ...(value.closeSignature ? { closeSignature: value.closeSignature } : {}),
       };
     }
     await writeFile(this.filePath, JSON.stringify(data, null, 2), 'utf-8');

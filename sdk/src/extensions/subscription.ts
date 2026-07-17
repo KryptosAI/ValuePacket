@@ -142,6 +142,14 @@ export const SUBSCRIPTION_MANAGER_ABI = [
   },
   {
     type: 'error',
+    name: 'InvalidSalt',
+    inputs: [
+      { name: 'provided', type: 'bytes32' },
+      { name: 'expected', type: 'bytes32' },
+    ],
+  },
+  {
+    type: 'error',
     name: 'MaxPeriodsReached',
     inputs: [
       { name: 'subscriptionId', type: 'uint256' },
@@ -809,7 +817,7 @@ function parseSubscriptionCancelledLog(
  * This ensures each period requires a unique signature from the payer,
  * preventing the payee from reusing a previous authorization.
  */
-function computeRenewalSalt(
+export function computeRenewalSalt(
   subscriptionId: bigint,
   nextPeriod: number,
 ): `0x${string}` {

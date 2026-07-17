@@ -49,6 +49,7 @@ export type { SubscriptionConfig } from './extensions/subscription.js';
 export {
   SUBSCRIPTION_MANAGER_ABI,
   SUBSCRIPTION_AUTH_TYPE,
+  computeRenewalSalt,
 } from './extensions/subscription.js';
 
 export {
@@ -93,6 +94,7 @@ export type {
 
 export type {
   ChannelServerConfig,
+  AutoSettleConfig,
 } from './provider.js';
 
 export type {

@@ -464,7 +464,7 @@ async function handlePrice(
   });
 }
 
-const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+export const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
   try {
     const pathParts = parseUrlPath(req.url);
 

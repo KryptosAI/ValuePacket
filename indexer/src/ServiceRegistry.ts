@@ -1,5 +1,5 @@
-import { ponder } from "@ponder/core";
-import { service } from "../ponder.schema";
+import { ponder } from "ponder:registry";
+import { service } from "ponder:schema";
 
 ponder.on("ServiceRegistry:ServiceRegistered", async ({ event, context }) => {
   const { serviceId, provider } = event.args;
@@ -11,17 +11,14 @@ ponder.on("ServiceRegistry:ServiceRegistered", async ({ event, context }) => {
     args: [serviceId],
   });
 
-  const [metadataURI, pricePerRequest, maxResponseMs, registeredAt, active] =
-    svc as unknown as [string, bigint, number, number, boolean];
-
   await context.db.insert(service).values({
     id: serviceId,
     provider,
-    metadataURI,
-    pricePerRequest,
-    maxResponseMs,
-    registeredAt,
-    active,
+    metadataURI: svc.metadataURI,
+    pricePerRequest: svc.pricePerRequest,
+    maxResponseMs: svc.maxResponseMs,
+    registeredAt: svc.registeredAt,
+    active: svc.active,
   });
 });
 
@@ -35,14 +32,11 @@ ponder.on("ServiceRegistry:ServiceUpdated", async ({ event, context }) => {
     args: [serviceId],
   });
 
-  const [metadataURI, pricePerRequest, maxResponseMs] =
-    svc as unknown as [string, bigint, number];
-
   await context.db.update(service, { id: serviceId }).set({
-    metadataURI,
-    pricePerRequest,
-    maxResponseMs,
-    updatedAt: event.block.timestamp,
+    metadataURI: svc.metadataURI,
+    pricePerRequest: svc.pricePerRequest,
+    maxResponseMs: svc.maxResponseMs,
+    updatedAt: Number(event.block.timestamp),
   });
 });
 
@@ -51,6 +45,6 @@ ponder.on("ServiceRegistry:ServiceDeactivated", async ({ event, context }) => {
 
   await context.db.update(service, { id: serviceId }).set({
     active: false,
-    updatedAt: event.block.timestamp,
+    updatedAt: Number(event.block.timestamp),
   });
 });

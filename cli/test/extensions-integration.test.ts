@@ -105,6 +105,7 @@ const subscriptionManagerAbi = parseAbi([
   'error MaxPeriodsReached(uint256 subscriptionId, uint256 completedPeriods, uint256 maxPeriods)',
   'error SpentExceedsAmount(uint256 spent, uint256 amountPerPeriod)',
   'error InvalidSignature()',
+  'error InvalidSalt(bytes32 provided, bytes32 expected)',
   'error ZeroAddress()',
   'error ZeroAmount()',
   'error InsufficientDeposit(uint256 provided, uint256 required)',
@@ -245,6 +246,18 @@ function computeDomainSeparator(
         BigInt(chainId),
         verifyingContract,
       ],
+    ),
+  );
+}
+
+// Renewal salts must be period-bound: the contract requires
+// salt == keccak256(abi.encode(subscriptionId, completedPeriods + 1))
+// so a payer signature can only be used for exactly one renewal.
+function periodSalt(subscriptionId: bigint, periodNumber: bigint): `0x${string}` {
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: 'uint256' }, { type: 'uint256' }],
+      [subscriptionId, periodNumber],
     ),
   );
 }
@@ -840,7 +853,7 @@ describe('ValuePacket Extensions Integration', () => {
     // ── Renew 1: settle period 1, advance to period 2 ─────────────────
     await increaseTime(periodDuration + 1);
 
-    const salt1 = keccak256(toHex('salt-renew-1'));
+    const salt1 = periodSalt(subscriptionId, 1n); // completedPeriods = 0 → period 1
     const renewSig1 = await signSubscriptionAuth(
       payer,
       subscriptionId,
@@ -898,7 +911,7 @@ describe('ValuePacket Extensions Integration', () => {
     // ── Renew 2: settle period 2, advance to period 3 ─────────────────
     await increaseTime(periodDuration + 1);
 
-    const salt2 = keccak256(toHex('salt-renew-2'));
+    const salt2 = periodSalt(subscriptionId, 2n); // completedPeriods = 1 → period 2
     const renewSig2 = await signSubscriptionAuth(
       payer,
       subscriptionId,
@@ -943,7 +956,7 @@ describe('ValuePacket Extensions Integration', () => {
     // ── Renew 3 attempt: should revert (max 2 completed) ──────────────
     await increaseTime(periodDuration + 1);
 
-    const salt3 = keccak256(toHex('salt-renew-3'));
+    const salt3 = periodSalt(subscriptionId, 3n); // would-be period 3 (reverts: max periods)
     const renewSig3 = await signSubscriptionAuth(
       payer,
       subscriptionId,
@@ -1205,7 +1218,7 @@ describe('ValuePacket Extensions Integration', () => {
     // Advance time and renew
     await increaseTime(periodDuration + 1);
 
-    const salt1 = keccak256(toHex('fullflow-salt-1'));
+    const salt1 = periodSalt(subId, 1n); // completedPeriods = 0 → period 1
     const renewSig1 = await signSubscriptionAuth(
       payer,
       subId,
@@ -1254,7 +1267,7 @@ describe('ValuePacket Extensions Integration', () => {
     // Advance time and renew → period 3
     await increaseTime(periodDuration + 1);
 
-    const salt2 = keccak256(toHex('fullflow-salt-2'));
+    const salt2 = periodSalt(subId, 2n); // completedPeriods = 1 → period 2
     const renewSig2 = await signSubscriptionAuth(
       payer,
       subId,
@@ -1338,7 +1351,7 @@ describe('ValuePacket Extensions Integration', () => {
     // ── 4e: Verify cannot renew past max ──────────────────────────────
     await increaseTime(periodDuration + 1);
 
-    const salt3 = keccak256(toHex('fullflow-salt-3'));
+    const salt3 = periodSalt(subId, 3n); // would-be period 3 (reverts: max periods)
     const renewSig3 = await signSubscriptionAuth(
       payer,
       subId,

@@ -4,14 +4,16 @@
   "type": "module",
   "scripts": {
     "start": "tsx --env-file=.env src/server.ts",
-    "dev": "tsx watch --env-file=.env src/server.ts"
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "test": "vitest run"
   },
   "dependencies": {
-    "viem": "^2.0.0",
-    "@valuepacket/sdk": "^0.2.1"
+    "@valuepacket/sdk": "^0.2.1",
+    "viem": "^2.0.0"
   },
   "devDependencies": {
     "tsx": "^4.0.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.9"
   }
 }

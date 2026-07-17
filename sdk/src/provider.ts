@@ -13,20 +13,11 @@ import {
   AgentSettlementError,
 } from './errors.js';
 import { ValuePacketEvents } from './extensions/events.js';
-import type { ChannelStateStore } from './extensions/persistence.js';
+import type { ChannelStateStore, ChannelState } from './extensions/persistence.js';
 import { MemoryChannelStateStore } from './extensions/persistence.js';
 
 const DOMAIN_NAME = 'ValuePacket';
 const DOMAIN_VERSION = '1';
-
-interface ChannelState {
-  channelId: bigint;
-  cumulativeSpent: bigint;
-  lastNonce: bigint;
-  payer: `0x${string}`;
-  deposit: bigint;
-  expiresAt: number;
-}
 
 interface ViemChannel {
   payer: `0x${string}`;
@@ -42,6 +33,24 @@ interface ViemChannel {
 }
 
 /**
+ * Opt-in automatic settlement of channels that are close to expiry.
+ */
+export interface AutoSettleConfig {
+  /** Master switch. When false the poller never starts. */
+  enabled: boolean;
+  /**
+   * How many seconds before a channel's expiry auto-settlement kicks in.
+   * Defaults to 300 (5 minutes).
+   */
+  marginSeconds?: number;
+  /**
+   * How often the poller scans tracked channels, in milliseconds.
+   * Defaults to 30000 (30 seconds).
+   */
+  pollIntervalMs?: number;
+}
+
+/**
  * Configuration for the ChannelServer.
  */
 export interface ChannelServerConfig {
@@ -54,8 +63,18 @@ export interface ChannelServerConfig {
     channelId: bigint;
     cumulativeSpent: bigint;
   }) => Promise<unknown>;
+  /**
+   * Persistent store for per-channel payment state. Defaults to an
+   * in-memory store. Provide a FileChannelStateStore (or custom
+   * implementation) so replay protection and auto-settlement survive
+   * process restarts.
+   */
+  stateStore?: ChannelStateStore;
+  /** @deprecated Use `stateStore` instead. Kept for backwards compatibility. */
   store?: ChannelStateStore;
   settlementWorker?: SettlementWorker;
+  /** Opt-in automatic settlement of channels nearing expiry. */
+  autoSettle?: AutoSettleConfig;
 }
 
 /**
@@ -93,6 +112,13 @@ export class ChannelServer {
   private channelCache: Map<bigint, { channel: ViemChannel; timestamp: number }>;
   private readonly CACHE_TTL_MS = 30_000;
 
+  private autoSettleEnabled: boolean;
+  private autoSettleMarginSeconds: number;
+  private autoSettlePollIntervalMs: number;
+  private autoSettleTimer: NodeJS.Timeout | null;
+  private autoSettleSweepInFlight: boolean;
+  private settling: Set<bigint>;
+
   public readonly events = new ValuePacketEvents();
 
   constructor(config: ChannelServerConfig) {
@@ -105,19 +131,34 @@ export class ChannelServer {
     this.httpServer = null;
     this.channels = new Map();
     this.channelCache = new Map();
-    this.store = config.store ?? new MemoryChannelStateStore();
+    this.store = config.stateStore ?? config.store ?? new MemoryChannelStateStore();
+
+    this.autoSettleEnabled = config.autoSettle?.enabled ?? false;
+    this.autoSettleMarginSeconds = config.autoSettle?.marginSeconds ?? 300;
+    this.autoSettlePollIntervalMs = config.autoSettle?.pollIntervalMs ?? 30_000;
+    this.autoSettleTimer = null;
+    this.autoSettleSweepInFlight = false;
+    this.settling = new Set();
   }
 
   /**
    * Starts the HTTP server and begins listening for incoming paid requests.
+   * Previously persisted channel proofs are hydrated from the state store so
+   * replay protection and auto-settlement survive restarts.
    */
   async start(): Promise<void> {
     if (this.httpServer) {
       throw new Error('Server is already running');
     }
 
+    await this.hydrateFromStore();
+
     if (this.settlementWorker) {
       this.settlementWorker.start();
+    }
+
+    if (this.autoSettleEnabled) {
+      this.startAutoSettlePoller();
     }
 
     this.httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -158,15 +199,17 @@ export class ChannelServer {
           ? cumulativeSpent - prevState.cumulativeSpent
           : cumulativeSpent;
 
+        const closeSignature = this.extractCloseSignature(req);
+
         await this.validateAndTrackChannel(
           channelId,
           cumulativeSpent,
           nonce,
           payerAddress,
+          closeSignature,
         );
 
         // Track for automatic settlement if a close signature is provided
-        const closeSignature = this.extractCloseSignature(req);
         if (this.settlementWorker && closeSignature) {
           this.settlementWorker.trackChannel(
             channelId,
@@ -210,9 +253,14 @@ export class ChannelServer {
   }
 
   /**
-   * Stops the HTTP server gracefully.
+   * Stops the HTTP server gracefully and clears the auto-settlement poller.
    */
   async stop(): Promise<void> {
+    if (this.autoSettleTimer) {
+      clearInterval(this.autoSettleTimer);
+      this.autoSettleTimer = null;
+    }
+
     if (this.settlementWorker) {
       this.settlementWorker.stop();
     }
@@ -261,6 +309,138 @@ export class ChannelServer {
   }
 
   // ── Private methods ─────────────────────────────────────────────
+
+  private async hydrateFromStore(): Promise<void> {
+    const persisted = await this.store.getAll();
+    for (const [channelId, state] of persisted) {
+      if (!this.channels.has(channelId)) {
+        this.channels.set(channelId, state);
+      }
+    }
+  }
+
+  private startAutoSettlePoller(): void {
+    if (this.autoSettleTimer) {
+      return;
+    }
+
+    this.autoSettleTimer = setInterval(() => {
+      if (this.autoSettleSweepInFlight) {
+        return;
+      }
+      this.autoSettleSweepInFlight = true;
+      this.runAutoSettleSweep()
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[ChannelServer] Auto-settle sweep failed: ${message}`);
+        })
+        .finally(() => {
+          this.autoSettleSweepInFlight = false;
+        });
+    }, this.autoSettlePollIntervalMs);
+
+    this.autoSettleTimer.unref();
+  }
+
+  private async runAutoSettleSweep(): Promise<void> {
+    const now = Math.floor(Date.now() / 1000);
+
+    for (const [channelId, state] of [...this.channels]) {
+      if (this.settling.has(channelId)) continue;
+      if (!state.closeSignature) continue;
+      if (state.cumulativeSpent <= 0n) continue;
+      if (now < state.expiresAt - this.autoSettleMarginSeconds) continue;
+
+      this.settling.add(channelId);
+      try {
+        await this.autoSettleChannel(channelId, state);
+      } finally {
+        this.settling.delete(channelId);
+      }
+    }
+  }
+
+  private async autoSettleChannel(channelId: bigint, state: ChannelState): Promise<void> {
+    try {
+      // Re-read fresh on-chain state so a channel closed by another party
+      // (payer refund, manual close, competing worker) is handled gracefully.
+      this.channelCache.delete(channelId);
+      const channel = await this.getCachedChannel(channelId);
+
+      if (channel.status !== 0) {
+        await this.removeChannel(channelId);
+        return;
+      }
+
+      // The channel may have been extended since we first tracked it.
+      if (channel.expiresAt !== state.expiresAt) {
+        state.expiresAt = channel.expiresAt;
+        await this.store.set(channelId, state);
+        const now = Math.floor(Date.now() / 1000);
+        if (now < channel.expiresAt - this.autoSettleMarginSeconds) {
+          return;
+        }
+      }
+
+      if (!this.wallet.account) {
+        console.error(
+          `[ChannelServer] Cannot auto-settle channel ${channelId.toString()}: wallet has no account configured`,
+        );
+        return;
+      }
+
+      const spent = state.cumulativeSpent;
+      const signature = state.closeSignature!;
+
+      const { request } = await this.publicClient.simulateContract({
+        address: this.paymentChannelAddress,
+        abi: PAYMENT_CHANNEL_ABI,
+        functionName: 'closeChannel',
+        args: [channelId, spent, signature],
+        account: this.wallet.account,
+      });
+
+      const txHash = await this.wallet.writeContract(request);
+      await this.publicClient.waitForTransactionReceipt({ hash: txHash });
+
+      console.log(
+        `[ChannelServer] Auto-settled channel ${channelId.toString()}: spent=${spent.toString()} tx=${txHash}`,
+      );
+
+      this.events.emit('channel:closed', {
+        channelId,
+        spent,
+        refunded: state.deposit - spent,
+        txHash,
+      });
+
+      await this.removeChannel(channelId);
+    } catch (err: unknown) {
+      // Race: the channel may have been closed between the status check and
+      // our submission. Re-check and clean up instead of failing loudly.
+      const cleaned = await this.cleanupIfClosed(channelId);
+      if (!cleaned) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[ChannelServer] Auto-settle failed for channel ${channelId.toString()}: ${message}`,
+        );
+      }
+    }
+  }
+
+  private async cleanupIfClosed(channelId: bigint): Promise<boolean> {
+    try {
+      this.channelCache.delete(channelId);
+      const channel = await this.getCachedChannel(channelId);
+      if (channel.status !== 0) {
+        await this.removeChannel(channelId);
+        return true;
+      }
+    } catch {
+      // Could not re-read the channel; leave state for the next sweep.
+    }
+    return false;
+  }
 
   private async getCachedChannel(channelId: bigint): Promise<ViemChannel> {
     const cached = this.channelCache.get(channelId);
@@ -336,6 +516,7 @@ export class ChannelServer {
     cumulativeSpent: bigint,
     nonce: bigint,
     payerAddress: `0x${string}`,
+    closeSignature: `0x${string}` | null,
   ): Promise<void> {
     let existing = this.channels.get(channelId);
 
@@ -356,6 +537,9 @@ export class ChannelServer {
 
       existing.cumulativeSpent = cumulativeSpent;
       existing.lastNonce = nonce;
+      if (closeSignature) {
+        existing.closeSignature = closeSignature;
+      }
       await this.store.set(channelId, existing);
       return;
     }
@@ -385,6 +569,9 @@ export class ChannelServer {
 
       persisted.cumulativeSpent = cumulativeSpent;
       persisted.lastNonce = nonce;
+      if (closeSignature) {
+        persisted.closeSignature = closeSignature;
+      }
       this.channels.set(channelId, persisted);
       await this.store.set(channelId, persisted);
       return;
@@ -399,6 +586,7 @@ export class ChannelServer {
       payer: payerAddress,
       deposit: channel.deposit,
       expiresAt: channel.expiresAt,
+      ...(closeSignature ? { closeSignature } : {}),
     };
     this.channels.set(channelId, state);
     await this.store.set(channelId, state);

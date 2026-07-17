@@ -1,17 +1,21 @@
-import { createConfig } from "@ponder/core";
-import { http } from "viem";
-import { baseSepolia } from "viem/chains";
+import { createConfig } from "ponder";
+
+const SERVICE_REGISTRY_ADDRESS = (process.env.SERVICE_REGISTRY_ADDRESS ??
+  "0x32487f8a8B54A8E8efBAb0c72De7b34239952180") as `0x${string}`;
+
+const PAYMENT_CHANNEL_ADDRESS = (process.env.PAYMENT_CHANNEL_ADDRESS ??
+  "0x9c350ae4D2e8aE380185d3AC95b56fedF98837C3") as `0x${string}`;
 
 export default createConfig({
-  networks: {
+  chains: {
     baseSepolia: {
-      chainId: 84532,
-      transport: http(process.env.PONDER_RPC_URL_84532),
+      id: 84532,
+      rpc: process.env.PONDER_RPC_URL_84532 ?? "https://sepolia.base.org",
     },
   },
   contracts: {
     ServiceRegistry: {
-      network: "baseSepolia",
+      chain: "baseSepolia",
       abi: [
         {
           type: "function",
@@ -117,12 +121,11 @@ export default createConfig({
           anonymous: false,
         },
       ] as const,
-      address: process.env
-        .SERVICE_REGISTRY_ADDRESS as `0x${string}`,
+      address: SERVICE_REGISTRY_ADDRESS,
       startBlock: 0,
     },
     PaymentChannel: {
-      network: "baseSepolia",
+      chain: "baseSepolia",
       abi: [
         {
           type: "function",
@@ -232,8 +235,7 @@ export default createConfig({
           anonymous: false,
         },
       ] as const,
-      address: process.env
-        .PAYMENT_CHANNEL_ADDRESS as `0x${string}`,
+      address: PAYMENT_CHANNEL_ADDRESS,
       startBlock: 0,
     },
   },

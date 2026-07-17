@@ -74,22 +74,33 @@ export class ValuePacketEvents extends EventEmitter {
   }
 }
 
+function bigintSafeReplacer(_key: string, value: unknown): unknown {
+  return typeof value === 'bigint' ? value.toString() : value;
+}
+
 async function postToWebhook(
   url: string,
   event: string,
   data: unknown,
   secret?: string,
 ): Promise<void> {
-  const payload = JSON.stringify({ event, data, timestamp: Date.now() });
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const payload = JSON.stringify(
+      { event, data, timestamp: Date.now() },
+      bigintSafeReplacer,
+    );
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 
-  if (secret) {
-    const crypto = await import('node:crypto');
-    const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-    headers['X-ValuePacket-Signature'] = sig;
+    if (secret) {
+      const crypto = await import('node:crypto');
+      const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+      headers['X-ValuePacket-Signature'] = sig;
+    }
+
+    await fetch(url, { method: 'POST', headers, body: payload }).catch(() => {});
+  } catch {
+    // Webhook delivery is best-effort; never propagate serialization errors.
   }
-
-  fetch(url, { method: 'POST', headers, body: payload }).catch(() => {});
 }
 
 export function createWebhookForwarder(

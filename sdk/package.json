@@ -20,7 +20,8 @@
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --sourcemap",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dev": "tsup src/index.ts --format esm,cjs --dts --watch --sourcemap"
+    "dev": "tsup src/index.ts --format esm,cjs --dts --watch --sourcemap",
+    "docs": "typedoc"
   },
   "keywords": [
     "agent",
@@ -53,6 +54,7 @@
   },
   "devDependencies": {
     "tsup": "^8.3.0",
+    "typedoc": "^0.28.0",
     "typescript": "^5.6.0",
     "vitest": "^2.0.0"
   },
