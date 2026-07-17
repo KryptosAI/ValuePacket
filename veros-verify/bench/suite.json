@@ -1,0 +1,45 @@
+{
+  "description": "Counterflow benchmark: known-exploit patterns vs correct references. Each case is checked deterministically from a human-reviewed binding (no LLM), so results are reproducible in CI.",
+  "cases": [
+    {
+      "name": "TokenPool (safe)",
+      "binding": "../examples/TokenPool.binding.json",
+      "expect": "proved",
+      "class": "reference"
+    },
+    {
+      "name": "TokenPoolBuggy (missing balance check + unchecked)",
+      "binding": "../examples/TokenPoolBuggy.binding.json",
+      "expect": "violated",
+      "expectInvariant": "nonneg_balance",
+      "class": "underflow-drain"
+    },
+    {
+      "name": "SafeVault (safe)",
+      "binding": "bindings/SafeVault.binding.json",
+      "expect": "proved",
+      "class": "reference"
+    },
+    {
+      "name": "ApprovalDrain (missing allowance check)",
+      "binding": "bindings/ApprovalDrain.binding.json",
+      "expect": "violated",
+      "expectInvariant": "nonneg_allowance",
+      "class": "approval-drain"
+    },
+    {
+      "name": "UnbackedMintVault (owner infinite mint)",
+      "binding": "bindings/UnbackedMintVault.binding.json",
+      "expect": "violated",
+      "expectInvariant": "backing",
+      "class": "unbacked-mint"
+    },
+    {
+      "name": "BurnDesyncVault (totalShares desync)",
+      "binding": "bindings/BurnDesyncVault.binding.json",
+      "expect": "violated",
+      "expectInvariant": "shares_integrity",
+      "class": "accounting-desync"
+    }
+  ]
+}

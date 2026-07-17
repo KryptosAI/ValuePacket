@@ -1,0 +1,34 @@
+{
+  "name": "@kryptosai/counterflow",
+  "version": "0.3.0",
+  "description": "Counterflow — Prove the contract, or reveal the exploit. AI-translated, Z3-proved smart contract invariant checking. Open core (MIT).",
+  "main": "src/verify.js",
+  "bin": {
+    "counterflow": "src/cli.js"
+  },
+  "scripts": {
+    "test": "node test/e2e.js",
+    "bench": "node bench/run.js",
+    "bytecode": "node src/cli.js bytecode HalmosTest",
+    "defihack:clone": "bash bench/defihack/setup.sh",
+    "defihack:bench": "node bench/defihack/runner.js",
+    "all": "node test/e2e.js && node bench/run.js && node src/cli.js bytecode HalmosTest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KryptosAI/counterflow"
+  },
+  "keywords": [
+    "formal-verification",
+    "smart-contracts",
+    "z3",
+    "solidity",
+    "invariants",
+    "llm",
+    "security"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  }
+}

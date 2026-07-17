@@ -1,0 +1,9 @@
+.venv/
+node_modules/
+audit.jsonl
+binding.json
+halmos/out/
+halmos/cache/
+echidna-output/
+foundry-output/
+__pycache__/
