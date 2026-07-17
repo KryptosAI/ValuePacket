@@ -6,7 +6,6 @@ contracts/out/
 contracts/cache/
 contracts/broadcast/
 contracts/deployments/
-contracts/lib/
 
 # Build output
 sdk/dist/

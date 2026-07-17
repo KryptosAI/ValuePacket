@@ -483,29 +483,24 @@ describe('ValuePacket Extensions Integration', () => {
     usdcAddress = deployContract('src/mocks/MockUSDC.sol:MockUSDC');
     registryAddress = deployContract('src/ServiceRegistry.sol:ServiceRegistry');
     channelAddress = deployContract('src/PaymentChannel.sol:PaymentChannel');
-    policyAddress = deployContract('src/SpendingPolicy.sol:SpendingPolicy');
+    policyAddress = deployContract(
+      'src/SpendingPolicy.sol:SpendingPolicy',
+      registryAddress,
+    );
 
     // MockEAS (needed by AgentReputation)
     easAddress = deployContract('src/mocks/MockEAS.sol:MockEAS');
 
     // AgentReputation(address eas)
-    const encodedEasArg = encodeAbiParameters(
-      [{ type: 'address' }],
-      [easAddress],
-    );
     reputationAddress = deployContract(
       'src/extensions/AgentReputation.sol:AgentReputation',
-      encodedEasArg,
+      easAddress,
     );
 
     // SubscriptionManager(address paymentChannel)
-    const encodedChannelArg = encodeAbiParameters(
-      [{ type: 'address' }],
-      [channelAddress],
-    );
     subscriptionAddress = deployContract(
       'src/extensions/SubscriptionManager.sol:SubscriptionManager',
-      encodedChannelArg,
+      channelAddress,
     );
 
     // MockAxelarGateway
@@ -519,18 +514,9 @@ describe('ValuePacket Extensions Integration', () => {
     sourceDomainSeparator = computeDomainSeparator(sourceChainId, channelAddress);
     const timeout = 7n * 24n * 3600n; // 1 week
 
-    const encodedSettlementArg = encodeAbiParameters(
-      [
-        { type: 'bytes32' },
-        { type: 'uint256' },
-        { type: 'address' },
-        { type: 'uint256' },
-      ],
-      [sourceDomainSeparator, BigInt(sourceChainId), axelarGatewayAddress, timeout],
-    );
     settlementAddress = deployContract(
       'src/extensions/CrossChainSettlement.sol:CrossChainSettlement',
-      encodedSettlementArg,
+      `${sourceDomainSeparator} ${sourceChainId} ${axelarGatewayAddress} ${timeout}`,
     );
 
     // ── Write local.json ─────────────────────────────────────────────
@@ -790,7 +776,7 @@ describe('ValuePacket Extensions Integration', () => {
     // Extract subscriptionId from SubscriptionCreated event
     const subCreatedTopic = keccak256(
       toHex(
-        'SubscriptionCreated(uint256,address,address,address,uint256)',
+        'SubscriptionCreated(uint256,address,address,uint256)',
       ),
     );
     const subEvent = subReceipt.logs.find(
@@ -1154,6 +1140,14 @@ describe('ValuePacket Extensions Integration', () => {
     const periodDuration = 3600;
     const maxPeriods = 2n;
 
+    // Earlier tests may have rated this provider; assert deltas, not absolutes.
+    const ratingCountBefore = (await publicClient.readContract({
+      address: reputationAddress,
+      abi: agentReputationAbi,
+      functionName: 'getRatingCount',
+      args: [providerAddr],
+    })) as unknown as bigint;
+
     // ── 4a: Create subscription ────────────────────────────────────────
     const subHash = await payer.writeContract({
       address: subscriptionAddress,
@@ -1172,7 +1166,7 @@ describe('ValuePacket Extensions Integration', () => {
     const subReceipt = await publicClient.waitForTransactionReceipt({ hash: subHash });
 
     const subCreatedTopic = keccak256(
-      toHex('SubscriptionCreated(uint256,address,address,address,uint256)'),
+      toHex('SubscriptionCreated(uint256,address,address,uint256)'),
     );
     const subEvent = subReceipt.logs.find(
       (l) =>
@@ -1323,7 +1317,7 @@ describe('ValuePacket Extensions Integration', () => {
       args: [providerAddr],
     })) as unknown as bigint;
 
-    expect(ratingCount).toBe(3n);
+    expect(ratingCount).toBe(ratingCountBefore + 3n);
 
     // Verify subscription: 2 completed periods, $10 total spent
     const subState = (await publicClient.readContract({

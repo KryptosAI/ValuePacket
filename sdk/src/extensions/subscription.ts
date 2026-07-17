@@ -32,12 +32,12 @@ export const SUBSCRIPTION_MANAGER_ABI = [
       { name: 'salt', type: 'bytes32' },
       { name: 'signature', type: 'bytes' },
     ],
-    outputs: [{ name: 'newChannelId', type: 'uint256' }],
+    outputs: [],
     stateMutability: 'nonpayable',
   },
   {
     type: 'function',
-    name: 'cancelSubscription',
+    name: 'cancel',
     inputs: [{ name: 'subscriptionId', type: 'uint256' }],
     outputs: [{ name: 'refunded', type: 'uint256' }],
     stateMutability: 'nonpayable',
@@ -51,21 +51,29 @@ export const SUBSCRIPTION_MANAGER_ABI = [
         name: '',
         type: 'tuple',
         components: [
-          { name: 'id', type: 'uint256' },
           { name: 'payer', type: 'address' },
           { name: 'payee', type: 'address' },
           { name: 'token', type: 'address' },
           { name: 'amountPerPeriod', type: 'uint256' },
           { name: 'periodDuration', type: 'uint32' },
           { name: 'maxPeriods', type: 'uint256' },
-          { name: 'completedPeriods', type: 'uint32' },
+          { name: 'completedPeriods', type: 'uint256' },
+          { name: 'totalDeposited', type: 'uint256' },
           { name: 'totalSpent', type: 'uint256' },
-          { name: 'remainingBalance', type: 'uint256' },
-          { name: 'currentChannelId', type: 'uint256' },
+          { name: 'activeChannelId', type: 'uint256' },
+          { name: 'currentPeriodStart', type: 'uint32' },
           { name: 'active', type: 'bool' },
+          { name: 'metadata', type: 'bytes' },
         ],
       },
     ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'getSubscriptionCount',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
     stateMutability: 'view',
   },
   {
@@ -75,8 +83,7 @@ export const SUBSCRIPTION_MANAGER_ABI = [
       { name: 'subscriptionId', type: 'uint256', indexed: true },
       { name: 'payer', type: 'address', indexed: true },
       { name: 'payee', type: 'address', indexed: true },
-      { name: 'channelId', type: 'uint256', indexed: false },
-      { name: 'initialDeposit', type: 'uint256', indexed: false },
+      { name: 'amountPerPeriod', type: 'uint256', indexed: false },
     ],
     anonymous: false,
   },
@@ -86,7 +93,8 @@ export const SUBSCRIPTION_MANAGER_ABI = [
     inputs: [
       { name: 'subscriptionId', type: 'uint256', indexed: true },
       { name: 'newChannelId', type: 'uint256', indexed: false },
-      { name: 'periodNumber', type: 'uint32', indexed: false },
+      { name: 'spentLastPeriod', type: 'uint256', indexed: false },
+      { name: 'periodNumber', type: 'uint256', indexed: false },
     ],
     anonymous: false,
   },
@@ -120,33 +128,61 @@ export const SUBSCRIPTION_MANAGER_ABI = [
   },
   {
     type: 'error',
-    name: 'InvalidSignature',
-    inputs: [],
+    name: 'NotPayee',
+    inputs: [
+      { name: 'subscriptionId', type: 'uint256' },
+      { name: 'caller', type: 'address' },
+      { name: 'payee', type: 'address' },
+    ],
   },
   {
     type: 'error',
-    name: 'InsufficientBalance',
-    inputs: [
-      { name: 'required', type: 'uint256' },
-      { name: 'available', type: 'uint256' },
-    ],
+    name: 'InvalidSignature',
+    inputs: [],
   },
   {
     type: 'error',
     name: 'MaxPeriodsReached',
     inputs: [
       { name: 'subscriptionId', type: 'uint256' },
-      { name: 'completed', type: 'uint32' },
-      { name: 'max', type: 'uint256' },
+      { name: 'completedPeriods', type: 'uint256' },
+      { name: 'maxPeriods', type: 'uint256' },
     ],
   },
   {
     type: 'error',
-    name: 'InvalidInitialDeposit',
+    name: 'InsufficientDeposit',
     inputs: [
-      { name: 'deposit', type: 'uint256' },
+      { name: 'provided', type: 'uint256' },
+      { name: 'required', type: 'uint256' },
+    ],
+  },
+  {
+    type: 'error',
+    name: 'SpentExceedsAmount',
+    inputs: [
+      { name: 'spent', type: 'uint256' },
       { name: 'amountPerPeriod', type: 'uint256' },
     ],
+  },
+  {
+    type: 'error',
+    name: 'ChannelNotExpired',
+    inputs: [
+      { name: 'channelId', type: 'uint256' },
+      { name: 'expiresAt', type: 'uint32' },
+      { name: 'currentTime', type: 'uint32' },
+    ],
+  },
+  {
+    type: 'error',
+    name: 'ZeroAddress',
+    inputs: [],
+  },
+  {
+    type: 'error',
+    name: 'ZeroAmount',
+    inputs: [],
   },
 ] as const;
 
@@ -166,18 +202,19 @@ const DOMAIN_NAME = 'ValuePacket';
 const DOMAIN_VERSION = '1';
 
 interface ViemSubscription {
-  id: bigint;
   payer: `0x${string}`;
   payee: `0x${string}`;
   token: `0x${string}`;
   amountPerPeriod: bigint;
   periodDuration: number;
   maxPeriods: bigint;
-  completedPeriods: number;
+  completedPeriods: bigint;
+  totalDeposited: bigint;
   totalSpent: bigint;
-  remainingBalance: bigint;
-  currentChannelId: bigint;
+  activeChannelId: bigint;
+  currentPeriodStart: number;
   active: boolean;
+  metadata: `0x${string}`;
 }
 
 // ─── Configuration ────────────────────────────────────────────────
@@ -312,11 +349,19 @@ export class SubscriptionSession {
       config.subscriptionManagerAddress,
     );
 
-    if (!parsed) {
+    if (parsed === null) {
       throw new Error('SubscriptionCreated event not found in transaction receipt');
     }
 
-    const { subscriptionId, channelId } = parsed;
+    const subscriptionId = parsed;
+
+    const subResult = await publicClient.readContract({
+      address: config.subscriptionManagerAddress,
+      abi: SUBSCRIPTION_MANAGER_ABI,
+      functionName: 'getSubscription',
+      args: [subscriptionId],
+    });
+    const channelId = (subResult as unknown as ViemSubscription).activeChannelId;
 
     const session = new SubscriptionSession(config);
     session.subscriptionId = subscriptionId;
@@ -366,8 +411,8 @@ export class SubscriptionSession {
 
     const sub = result as unknown as ViemSubscription;
 
-    if (sub.id === 0n || !sub.active) {
-      throw new Error(`Subscription ${subscriptionId.toString()} not found or is not active`);
+    if (!sub.active) {
+      throw new Error(`Subscription ${subscriptionId.toString()} is not active`);
     }
 
     const session = new SubscriptionSession({
@@ -376,21 +421,21 @@ export class SubscriptionSession {
       amountPerPeriod: sub.amountPerPeriod,
       periodDuration: sub.periodDuration,
       maxPeriods: Number(sub.maxPeriods),
-      initialDeposit: sub.remainingBalance + sub.totalSpent,
+      initialDeposit: sub.totalDeposited,
       metadata: '0x',
       subscriptionManagerAddress,
       paymentChannelAddress,
     });
 
-    session.subscriptionId = sub.id;
+    session.subscriptionId = subscriptionId;
     session.payer = wallet;
     session.publicClient = publicClient;
-    session.completedPeriods = sub.completedPeriods;
+    session.completedPeriods = Number(sub.completedPeriods);
     session.totalSpent = sub.totalSpent;
-    session.remainingBalance = sub.remainingBalance;
+    session.remainingBalance = sub.totalDeposited - sub.totalSpent;
 
     session.currentChannel = new ChannelSession({
-      channelId: sub.currentChannelId,
+      channelId: sub.activeChannelId,
       payer: wallet,
       publicClient,
       payeeEndpoint: '',
@@ -456,20 +501,33 @@ export class SubscriptionSession {
 
   /**
    * Triggers renewal of the subscription for the next billing period.
-   * Signs an EIP-712 SubscriptionAuth authorization, submits it on-chain,
-   * and switches to the newly created payment channel.
+   *
+   * The contract requires `msg.sender` to be the subscription payee, and the
+   * authorization signature to come from the payer. Pass the payee's wallet
+   * as `submitter`; the payer's signature can be pre-collected via
+   * `signRenewAuthorization()` and passed as `authSignature`. If omitted,
+   * the session wallet signs the authorization (payer-side pre-approval).
    *
    * The salt is derived from `keccak256(abi.encode(subscriptionId, completedPeriods + 1))`
    * to prevent replay attacks across periods.
    *
+   * @param spent - Amount actually consumed during the elapsed period.
+   * @param submitter - Wallet that submits the transaction (must be the payee). Defaults to the session wallet.
+   * @param authSignature - Pre-collected payer EIP-712 authorization. Defaults to signing with the session wallet.
    * @returns The transaction hash and the new payment channel ID.
    */
-  async renew(spent: bigint = 0n): Promise<{ txHash: `0x${string}`; newChannelId: bigint }> {
-    if (!this.payer.account) {
-      throw new Error('Payer wallet has no account configured');
+  async renew(
+    spent: bigint = 0n,
+    submitter?: WalletClient,
+    authSignature?: `0x${string}`,
+  ): Promise<{ txHash: `0x${string}`; newChannelId: bigint }> {
+    const sender = submitter ?? this.payer;
+
+    if (!sender.account) {
+      throw new Error('Submitting wallet has no account configured');
     }
 
-    const signature = await this.signRenewAuthorization();
+    const signature = authSignature ?? (await this.signRenewAuthorization());
 
     const { request } = await this.publicClient.simulateContract({
       address: this.subscriptionManagerAddress,
@@ -481,10 +539,10 @@ export class SubscriptionSession {
         computeRenewalSalt(this.subscriptionId, this.completedPeriods + 1),
         signature,
       ],
-      account: this.payer.account,
+      account: sender.account,
     });
 
-    const txHash = await this.payer.writeContract(request);
+    const txHash = await sender.writeContract(request);
 
     const receipt = await this.publicClient.waitForTransactionReceipt({
       hash: txHash,
@@ -535,7 +593,7 @@ export class SubscriptionSession {
     const { request } = await this.publicClient.simulateContract({
       address: this.subscriptionManagerAddress,
       abi: SUBSCRIPTION_MANAGER_ABI,
-      functionName: 'cancelSubscription',
+      functionName: 'cancel',
       args: [this.subscriptionId],
       account: this.payer.account,
     });
@@ -575,14 +633,14 @@ export class SubscriptionSession {
 
     const sub = result as unknown as ViemSubscription;
 
-    this.completedPeriods = sub.completedPeriods;
+    this.completedPeriods = Number(sub.completedPeriods);
     this.totalSpent = sub.totalSpent;
-    this.remainingBalance = sub.remainingBalance;
+    this.remainingBalance = sub.totalDeposited - sub.totalSpent;
 
-    if (sub.currentChannelId !== 0n) {
-      if (!this.currentChannel || this.currentChannel.channelId !== sub.currentChannelId) {
+    if (sub.activeChannelId !== 0n) {
+      if (!this.currentChannel || this.currentChannel.channelId !== sub.activeChannelId) {
         this.currentChannel = new ChannelSession({
-          channelId: sub.currentChannelId,
+          channelId: sub.activeChannelId,
           payer: this.payer,
           publicClient: this.publicClient,
           payeeEndpoint: '',
@@ -653,7 +711,7 @@ export class SubscriptionSession {
 function parseSubscriptionCreatedLog(
   logs: readonly { address: string; topics: readonly string[]; data: string }[],
   subscriptionManagerAddress: `0x${string}`,
-): { subscriptionId: bigint; channelId: bigint } | null {
+): bigint | null {
   for (const log of logs) {
     if (log.address.toLowerCase() !== subscriptionManagerAddress.toLowerCase()) {
       continue;
@@ -667,18 +725,11 @@ function parseSubscriptionCreatedLog(
       });
 
       if (decoded.eventName === 'SubscriptionCreated') {
-        const args = decoded.args as { subscriptionId: bigint; channelId: bigint };
-        return {
-          subscriptionId: args.subscriptionId,
-          channelId: args.channelId,
-        };
+        return (decoded.args as { subscriptionId: bigint }).subscriptionId;
       }
     } catch {
       if (log.topics.length > 1 && log.topics[1]) {
-        return {
-          subscriptionId: BigInt(log.topics[1]),
-          channelId: 0n,
-        };
+        return BigInt(log.topics[1]);
       }
     }
   }

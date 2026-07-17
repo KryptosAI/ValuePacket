@@ -2,13 +2,13 @@
 
 import {
   decodeEventLog,
-  privateKeyToAccount,
   createWalletClient,
   createPublicClient,
   http,
   type WalletClient,
   type PublicClient,
 } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type {
