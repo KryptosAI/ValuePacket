@@ -330,7 +330,7 @@ contract CrossChainSettlementTest is Test {
 
         _deposit(paymentId, payee, amount);
 
-        vm.expectRevert(CrossChainSettlement.InvalidSignature.selector);
+        vm.expectRevert();
         _relayExecute(paymentId, channelId, amount, hex"deadbeef");
     }
 

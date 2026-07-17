@@ -1,4 +1,4 @@
-.PHONY: demo-local demo-anvil demo-local-safe anvil deploy-local
+.PHONY: demo-local demo-anvil demo-local-safe anvil deploy-local demo-docker
 
 demo-local:
 	./scripts/local-demo.sh
@@ -17,3 +17,6 @@ deploy-local:
 	@echo "Deploying contracts to localhost:8545..."
 	@export DEPLOYER_PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 && \
 	cd contracts && forge script script/Deploy.s.sol --broadcast --rpc-url http://localhost:8545
+
+demo-docker:
+	docker compose up --build

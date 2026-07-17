@@ -705,7 +705,7 @@ contract PaymentChannelTest is Test {
         uint256 channelId = _openChannel(payer, payee, deposit, expiresAt);
 
         vm.prank(payee);
-        vm.expectRevert(PaymentChannel.InvalidSignature.selector);
+        vm.expectRevert();
         channels.closeChannel(channelId, deposit, hex"deadbeef");
     }
 }

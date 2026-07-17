@@ -2,8 +2,10 @@ import { describe, it, expect, vi } from 'vitest';
 
 import { log, formatAddress, formatUsdc, usdcToWei, weiToUsdc, truncate, ZERO_ADDRESS, FAUCET_URLS } from '../src/utils.js';
 import {
-  serviceRegistryAbi,
-  paymentChannelAbi,
+  SERVICE_REGISTRY_ABI,
+  PAYMENT_CHANNEL_ABI,
+} from '@valuepacket/sdk';
+import {
   erc20Abi,
   USDC_BASE_SEPOLIA,
 } from '../src/contracts.js';
@@ -50,8 +52,8 @@ describe('Utils', () => {
 });
 
 describe('Contracts', () => {
-  it('serviceRegistryAbi has register function', () => {
-    const registerFn = serviceRegistryAbi.find(
+  it('SERVICE_REGISTRY_ABI has register function', () => {
+    const registerFn = SERVICE_REGISTRY_ABI.find(
       (e: any) => e.type === 'function' && e.name === 'register',
     );
     expect(registerFn).toBeDefined();
@@ -59,23 +61,23 @@ describe('Contracts', () => {
     expect(registerFn!.outputs[0].name).toBe('serviceId');
   });
 
-  it('scrviceRegistryAbi has getService function', () => {
-    const getService = serviceRegistryAbi.find(
+  it('SERVICE_REGISTRY_ABI has getService function', () => {
+    const getService = SERVICE_REGISTRY_ABI.find(
       (e: any) => e.type === 'function' && e.name === 'getService',
     );
     expect(getService).toBeDefined();
   });
 
-  it('paymentChannelAbi has openChannel function', () => {
-    const openChannel = paymentChannelAbi.find(
+  it('PAYMENT_CHANNEL_ABI has openChannel function', () => {
+    const openChannel = PAYMENT_CHANNEL_ABI.find(
       (e: any) => e.type === 'function' && e.name === 'openChannel',
     );
     expect(openChannel).toBeDefined();
     expect(openChannel!.inputs).toHaveLength(6);
   });
 
-  it('paymentChannelAbi has closeChannel function', () => {
-    const closeChannel = paymentChannelAbi.find(
+  it('PAYMENT_CHANNEL_ABI has closeChannel function', () => {
+    const closeChannel = PAYMENT_CHANNEL_ABI.find(
       (e: any) => e.type === 'function' && e.name === 'closeChannel',
     );
     expect(closeChannel).toBeDefined();

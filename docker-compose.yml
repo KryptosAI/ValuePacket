@@ -1,0 +1,14 @@
+services:
+  valuepacket:
+    build: .
+    ports:
+      - "8545:8545"
+      - "3000:3000"
+      - "3001:3001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      retries: 6
+      start_period: 60s
+      timeout: 5s
+    stop_grace_period: 10s

@@ -506,7 +506,7 @@ describe('ChannelSession', () => {
       const result = await session.request<{ reply: string }>(body);
 
       expect(result.reply).toBe('Hello from AI');
-      expect(mockWallet.signTypedData).toHaveBeenCalledOnce();
+      expect(mockWallet.signTypedData).toHaveBeenCalledTimes(2); // payment proof + close sig
 
       expect(mockFetch).toHaveBeenCalledWith(ENDPOINT, expect.objectContaining({
         method: 'POST',
@@ -577,7 +577,7 @@ describe('ChannelSession', () => {
       expect(result.spent).toBe(PRICE_PER_REQUEST);
       expect(result.refunded).toBe(DEPOSIT - PRICE_PER_REQUEST);
 
-      expect(mockWallet.signTypedData).toHaveBeenCalledTimes(2); // one for request proof, one for close
+      expect(mockWallet.signTypedData).toHaveBeenCalledTimes(3); // two for request (proof + close sig), one for close
       expect(mockPublicClient.simulateContract).toHaveBeenCalledWith(
         expect.objectContaining({
           functionName: 'closeChannel',

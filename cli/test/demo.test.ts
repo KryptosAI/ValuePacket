@@ -110,6 +110,9 @@ vi.mock('@valuepacket/sdk', () => ({
       requestHash: '0x' + 'ab'.repeat(32),
     }),
   ),
+  SERVICE_REGISTRY_ABI: [{ type: 'function', name: 'register', inputs: [], outputs: [{ name: 'serviceId', type: 'bytes32' }] }],
+  PAYMENT_CHANNEL_ABI: [{ type: 'function', name: 'openChannel', inputs: [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'address' }, { type: 'bytes' }], outputs: [] }],
+  ServiceNotFoundError: class extends Error { constructor(public readonly serviceId: string) { super(`Service not found: ${serviceId}`); } },
 }));
 
 describe('Demo', () => {

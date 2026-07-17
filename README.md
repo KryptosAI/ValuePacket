@@ -61,6 +61,25 @@ npx valuepacket discover --type prediction-feed     # Find services
       Payee: +$2.50         Payer: +$2.50 refund
 ```
 
+## Docker (zero prerequisites)
+
+```bash
+docker compose up
+```
+
+or
+
+```bash
+make demo-docker
+```
+
+Starts anvil, deploys contracts, launches price-feed and contract-audit services, and runs the happy-path harness. No Foundry, Node, or anvil required on the host.
+
+After the demo completes, services stay running:
+- `curl http://localhost:3000/health` — price-feed
+- `curl http://localhost:3001/health` — contract-audit
+- `curl -X POST http://localhost:8545 -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}'` — anvil
+
 ## Real usage exists
 
 Agent-to-agent payments aren't theoretical. Olas Network has processed 13.6M A2A transactions with 651 daily active agents. ValuePacket makes this architecture framework-agnostic and permissionless.

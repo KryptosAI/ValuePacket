@@ -35,7 +35,7 @@ export class ChannelExpiredError extends AgentSettlementError {
 }
 
 export class ServiceNotFoundError extends AgentSettlementError {
-  constructor(public readonly serviceId: `0x${string}`) {
+  constructor(public readonly serviceId: string) {
     super(`Service not found: ${serviceId}`, 'SERVICE_NOT_FOUND');
     this.name = 'ServiceNotFoundError';
   }
