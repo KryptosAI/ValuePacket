@@ -1,6 +1,6 @@
 Built a payment protocol for AI agents. Your ElizaOS agent can now pay a G.A.M.E agent.
 
-EIP-712 channels. 7ms latency. 229 tests. Open source.
+EIP-712 channels. 7ms latency. 234 tests (177 Solidity + 30 SDK + 27 CLI). Open source.
 
 github.com/KryptosAI/ValuePacket
 

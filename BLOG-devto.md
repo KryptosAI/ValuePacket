@@ -52,7 +52,7 @@ This isn't a whitepaper. Here's what's real:
 - **CLI SDK** published: `npm install -g @valuepacket/cli`. Spin up channels, send payments, query balances — all from the terminal.
 - **ElizaOS adapter** and **G.A.M.E adapter** — drop-in payment capability for agents in either framework.
 - **Live price feed agent** serving real-time CoinGecko data at $0.001 per request. Agents query token prices and pay autonomously through a ValuePacket channel.
-- **119 tests passing** (92 Solidity, 27 TypeScript). Full acceptance suite passing on both local Anvil and Base Sepolia.
+- **234 tests passing (177 Solidity + 30 SDK + 27 CLI)** (92 Solidity, 27 TypeScript). Full acceptance suite passing on both local Anvil and Base Sepolia.
 - **One command demo:** `make demo-local` starts Anvil, deploys contracts, mints test USDC, and runs 10 paid requests at ~7ms latency.
 
 ## What's Next

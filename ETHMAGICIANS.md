@@ -56,6 +56,6 @@ Running a policy as an on-chain contract has gas implications, but we've found t
 2. **Channel lifecycle** — we currently require the payer to explicitly close the channel to withdraw remaining funds. Is there a better pattern for "expired" channels that doesn't require the payer to stay active?
 3. **MEV at settlement** — the settlement tx reveals the total payment value. For high-volume channels, this could leak revenue data. Has anyone designed around this, maybe with a commit-reveal settlement?
 
-Repo is at https://github.com/KryptosAI/ValuePacket — TypeScript SDK, Solidity contracts, and a working ElizaOS plugin. CLI installs with `npm i -g @valuepacket/cli`. Everything's MIT licensed, 229 tests, verified on Base Sepolia.
+Repo is at https://github.com/KryptosAI/ValuePacket — TypeScript SDK, Solidity contracts, and a working ElizaOS plugin. CLI installs with `npm i -g @valuepacket/cli`. Everything's MIT licensed, 234 tests (177 Solidity + 30 SDK + 27 CLI), verified on Base Sepolia.
 
 Would genuinely appreciate any critique. This works in demos but I want to know where it breaks at scale.

@@ -8,7 +8,7 @@ ValuePacket is a permissionless payment channel protocol that any agent can use 
 
 Concrete example: an ElizaOS agent deposits $5 USDC into a channel with a G.A.M.E agent running a price feed service. Every POST /price request carries an EIP-712 PaymentProof in the headers. The price feed verifies the proof against on-chain state in ~7ms and returns the current ETH price. After 1,000 requests, either side submits the latest channel state — the payee receives $1, the payer gets the remaining $4 back. Total on-chain footprint: two transactions.
 
-Open source (MIT), 229 tests (177 Solidity + 52 TypeScript), contracts verified on Base Sepolia. You can run the whole thing without installing anything:
+Open source (MIT), 234 tests (177 Solidity + 30 SDK + 27 CLI) (177 Solidity + 57 TypeScript), contracts verified on Base Sepolia. You can run the whole thing without installing anything:
 
 ```
 docker compose up

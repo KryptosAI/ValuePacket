@@ -27,7 +27,7 @@ await channel.close();
 - CLI SDK: `npm install -g @valuepacket/cli`
 - Adapters for [ElizaOS](https://www.npmjs.com/package/@valuepacket/adapter-eliza) and [G.A.M.E](https://www.npmjs.com/package/@valuepacket/adapter-game)
 - Live price feed agent serving CoinGecko data at $0.001/request
-- 119 tests passing. 7ms latency. One command demo: `make demo-local`
+- 234 tests passing (177 Solidity + 30 SDK + 27 CLI). 7ms latency. One command demo: `make demo-local`
 
 ---
 

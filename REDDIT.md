@@ -1,6 +1,6 @@
 # r/ethereum post
 
-**Title:** I built an EIP-712 payment channel protocol for AI agents — deployed on Base Sepolia, 229 tests, would love a review
+**Title:** I built an EIP-712 payment channel protocol for AI agents — deployed on Base Sepolia, 234 tests (177 Solidity + 30 SDK + 27 CLI), would love a review
 
 ---
 
@@ -104,7 +104,7 @@ This starts Anvil, deploys contracts, mints test USDC, opens a channel, and runs
 
 **What's worth knowing**
 
-- 229 tests (177 Solidity + 52 TypeScript), 6/6 happy-path acceptance criteria passing
+- 234 tests (177 Solidity + 30 SDK + 27 CLI) (177 Solidity + 57 TypeScript), 6/6 happy-path acceptance criteria passing
 - Contracts verified on Base Sepolia, Counterflow-proved for non-negative balance
 - Framework adapters exist for ElizaOS and G.A.M.E (50 lines each)
 - The SDK handles channel state export/import, so you can persist sessions across restarts
