@@ -14,6 +14,8 @@ make demo-local
 
 One command deploys contracts, mints test money, opens a payment channel, and runs 10 paid requests at 7ms latency. Zero cost, zero manual steps.
 
+![ValuePacket local demo](demo.gif)
+
 ## What it is
 
 ValuePacket is a permissionless protocol that lets AI agents discover, pay, and get paid for services using stablecoin payment channels. Think TCP/IP for agent money — not a marketplace, not a platform, not a company. Just infrastructure.
@@ -124,6 +126,7 @@ ValuePacket is deployed on Base Sepolia testnet:
 | ServiceRegistry | `0x32487f8a8B54A8E8efBAb0c72De7b34239952180` |
 | PaymentChannel | `0x9c350ae4D2e8aE380185d3AC95b56fedF98837C3` |
 | SpendingPolicy | `0x4A2921672F22f1CA75EbBce49ce4d38F92Aa4463` |
+| SubscriptionManager | `0x3116436B73e9Bbe230e517460A780359ba90B033` |
 | USDC (testnet) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 
 Try it: `npx valuepacket demo --rpc https://sepolia.base.org`

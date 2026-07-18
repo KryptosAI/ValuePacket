@@ -58,6 +58,31 @@ jobs:
           fi
           echo "OK: USDC deployed"
 
+      - name: Check SubscriptionManager deployment
+        run: |
+          RESULT=$(curl -s -X POST -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_getCode","params":["0x3116436B73e9Bbe230e517460A780359ba90B033","latest"],"id":1}' \
+            https://sepolia.base.org)
+          CODE=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['result'])")
+          if [ "$CODE" = "0x" ] || [ -z "$CODE" ]; then
+            echo "FAIL: SubscriptionManager has no code on Base Sepolia"
+            exit 1
+          fi
+          echo "OK: SubscriptionManager deployed"
+
+      - name: Read getSubscriptionCount() from SubscriptionManager
+        run: |
+          # selector verified with cast sig locally: 0x66419970
+          RESULT=$(curl -s -X POST -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_call","params":[{"to":"0x3116436B73e9Bbe230e517460A780359ba90B033","data":"0x66419970"},"latest"],"id":1}' \
+            https://sepolia.base.org)
+          COUNT=$(echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin)['result']; print(int(r,16) if r and r != '0x' else -1)")
+          if [ "$COUNT" -ge 0 ]; then
+            echo "OK: getSubscriptionCount() = $COUNT"
+          else
+            echo "WARN: getSubscriptionCount() returned empty"
+          fi
+
       - name: Read getServiceCount() from ServiceRegistry
         run: |
           # selector verified with cast sig locally: 0x3672404e

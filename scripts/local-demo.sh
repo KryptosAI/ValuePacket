@@ -160,6 +160,9 @@ echo -e "${GREEN}  Wrote $DEPLOYMENTS_FILE${NC}"
 # ── Step 6: Deploy extension contracts ─────────────────────────────────
 echo -e "${YELLOW}[6/9] Deploying extension contracts via forge script...${NC}"
 
+# DeployExtensions.s.sol reads PAYMENT_CHANNEL_ADDRESS via vm.envAddress
+export PAYMENT_CHANNEL_ADDRESS
+
 EXTENSIONS_FILE="$CONTRACTS_DIR/deployments/extensions.json"
 
 FORGE_EXT_OUTPUT=$(cd "$CONTRACTS_DIR" && forge script script/DeployExtensions.s.sol \

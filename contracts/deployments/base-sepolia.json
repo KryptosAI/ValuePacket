@@ -2,6 +2,7 @@
   "serviceRegistry": "0x32487f8a8B54A8E8efBAb0c72De7b34239952180",
   "paymentChannel": "0x9c350ae4D2e8aE380185d3AC95b56fedF98837C3",
   "spendingPolicy": "0x4A2921672F22f1CA75EbBce49ce4d38F92Aa4463",
+  "subscriptionManager": "0x3116436B73e9Bbe230e517460A780359ba90B033",
   "chainId": 84532,
   "usdcToken": "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
 }
