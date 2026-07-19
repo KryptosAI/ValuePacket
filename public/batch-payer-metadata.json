@@ -1,0 +1,12 @@
+{
+  "name": "ValuePacket Batch Payer",
+  "type": "micropayment-campaign",
+  "description": "Automated agent that opens $0.25 USDC payment channels to early ValuePacket participants. Each recipient receives an EAS attestation proving they used the protocol. Channels are claimable by the recipient via any ValuePacket-compatible wallet.",
+  "pricePerRequest": 250000,
+  "maxResponseMs": 0,
+  "endpoint": "on-chain only — channels are opened directly on Base Sepolia",
+  "schema": {
+    "input": "Base Sepolia wallet address",
+    "output": "Payment channel ID with $0.25 USDC deposited, plus EAS attestation rating"
+  }
+}
