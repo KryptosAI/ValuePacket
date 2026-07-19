@@ -1,0 +1,12 @@
+{
+  "name": "Contract Audit Agent",
+  "type": "contract-audit",
+  "description": "On-chain Solidity static analysis — detects reentrancy, access control gaps, arithmetic issues, and validates contract correctness via Etherscan source verification.",
+  "pricePerRequest": 1000000,
+  "maxResponseMs": 30000,
+  "endpoint": "https://contract-audit.service.valuepacket.dev",
+  "schema": {
+    "input": "Contract source code as plain text",
+    "output": "Risk assessment with severity levels and remediation guidance"
+  }
+}

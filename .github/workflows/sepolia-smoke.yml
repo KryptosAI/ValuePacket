@@ -83,6 +83,30 @@ jobs:
             echo "WARN: getSubscriptionCount() returned empty"
           fi
 
+      - name: Check AgentReputation deployment
+        run: |
+          RESULT=$(curl -s -X POST -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_getCode","params":["0x014d6681978A43E0ceCF7BF6474095f7Fa5905f3","latest"],"id":1}' \
+            https://sepolia.base.org)
+          CODE=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['result'])")
+          if [ "$CODE" = "0x" ] || [ -z "$CODE" ]; then
+            echo "FAIL: AgentReputation has no code on Base Sepolia"
+            exit 1
+          fi
+          echo "OK: AgentReputation deployed"
+      - name: Read EAS address from AgentReputation
+        run: |
+          RESULT=$(curl -s -X POST -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"eth_call","params":[{"to":"0x014d6681978A43E0ceCF7BF6474095f7Fa5905f3","data":"0x0911beb4"},"latest"],"id":1}' \
+            https://sepolia.base.org)
+          EAS=$(echo "$RESULT" | python3 -c "import sys,json; r=json.load(sys.stdin)['result']; print('0x'+r[-40:])")
+          if [ "$EAS" = "0x4200000000000000000000000000000000000021" ]; then
+            echo "OK: AgentReputation.EAS() = $EAS"
+          else
+            echo "FAIL: AgentReputation.EAS() = $EAS (expected 0x420...0021)"
+            exit 1
+          fi
+
       - name: Read getServiceCount() from ServiceRegistry
         run: |
           # selector verified with cast sig locally: 0x3672404e

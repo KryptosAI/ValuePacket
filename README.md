@@ -127,6 +127,7 @@ ValuePacket is deployed on Base Sepolia testnet:
 | PaymentChannel | `0x9c350ae4D2e8aE380185d3AC95b56fedF98837C3` |
 | SpendingPolicy | `0x4A2921672F22f1CA75EbBce49ce4d38F92Aa4463` |
 | SubscriptionManager | `0x3116436B73e9Bbe230e517460A780359ba90B033` |
+| AgentReputation | `0x014d6681978A43E0ceCF7BF6474095f7Fa5905f3` |
 | USDC (testnet) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 
 Try it: `npx valuepacket demo --rpc https://sepolia.base.org`
