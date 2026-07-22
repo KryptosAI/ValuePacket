@@ -5,10 +5,11 @@ const path = require('path');
 const GENESIS_HASH = '0'.repeat(64);
 const LOG_PATH = process.env.COUNTERFLOW_AUDIT || path.join(__dirname, '..', 'audit.jsonl');
 
-function canonicalJson(obj) {
-  const sorted = {};
-  for (const key of Object.keys(obj).sort()) sorted[key] = obj[key];
-  return JSON.stringify(sorted);
+function canonicalJson(value) {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
+  const keys = Object.keys(value).sort();
+  return '{' + keys.map((k) => JSON.stringify(k) + ':' + canonicalJson(value[k])).join(',') + '}';
 }
 
 function computeHash(prevHash, dataWithoutHash) {

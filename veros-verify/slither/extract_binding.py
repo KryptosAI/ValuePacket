@@ -619,8 +619,56 @@ def extract_binding(filepath):
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(f"usage: {sys.argv[0]} <Contract.sol>", file=sys.stderr)
+        print(f"usage: {sys.argv[0]} <Contract.sol> [--completeness <dummy>]", file=sys.stderr)
         sys.exit(1)
     result = extract_binding(sys.argv[1])
+
+    # When --completeness is passed, also enumerate state variables
+    do_completeness = '--completeness' in sys.argv
+    if do_completeness:
+        try:
+            slither = Slither(str(sys.argv[1]))
+            sv_list = []
+            for contract in slither.contracts:
+                for sv in contract.state_variables:
+                    written_by = []
+                    read_by = []
+                    for func in contract.functions:
+                        if func.is_constructor or func.is_fallback:
+                            continue
+                        if func.name.startswith('slither') or func.name.startswith('__'):
+                            continue
+                        sv_written = [v.name for v in func.state_variables_written]
+                        sv_read = [v.name for v in func.state_variables_read]
+                        if sv.name in sv_written:
+                            written_by.append(func.name)
+                        if sv.name in sv_read:
+                            read_by.append(func.name)
+                    info = {
+                        "name": sv.name,
+                        "type": str(sv.type),
+                        "written_by": written_by,
+                        "read_by": read_by,
+                    }
+                    name_lower = sv.name.lower()
+                    if any(k in name_lower for k in ['balance', 'balances']):
+                        info["classification"] = "balance"
+                    elif any(k in name_lower for k in ['share', 'shares']):
+                        info["classification"] = "share"
+                    elif any(k in name_lower for k in ['allowance', 'allowances']):
+                        info["classification"] = "allowance"
+                    elif any(k in name_lower for k in ['total']):
+                        info["classification"] = "total"
+                    elif any(k in name_lower for k in ['lock', 'locked']):
+                        info["classification"] = "lock"
+                    elif any(k in name_lower for k in ['collateral', 'debt', 'stake', 'reward']):
+                        info["classification"] = name_lower.split('_')[0]
+                    else:
+                        info["classification"] = "other"
+                    sv_list.append(info)
+            result["state_variables"] = sv_list
+        except Exception as exc:
+            result["state_variables_error"] = str(exc)
+
     json.dump(result, sys.stdout, indent=2)
     sys.stdout.write('\n')

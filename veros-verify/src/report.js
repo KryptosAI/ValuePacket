@@ -56,6 +56,9 @@ function render(result) {
 
   for (const fn of result.solver.functions) {
     lines.push(`  ${C.cyan}${C.bold}${fn.function}()${C.reset}`);
+    if (fn.vacuous === true) {
+      lines.push(`    ${C.yellow}⚠ vacuous — guards unsatisfiable; proofs are vacuous${C.reset}`);
+    }
     for (const r of fn.results) {
       if (r.status === 'proved') {
         lines.push(`    ${C.green}✓ proved${C.reset}   ${r.invariant}`);

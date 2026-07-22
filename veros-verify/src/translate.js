@@ -3,7 +3,13 @@ const { callLLM, extractJSON } = require('./llm');
 const GUARDS = [
   'amt_gt_0', 'bal_ge_amt', 'bal_gt_0', 'total_ge_amt', 'sender_is_owner',
   'bal_src_ge_amt', 'allowance_ge_amt', 'shares_ge_amt', 'total_shares_ge_amt',
-  'not_locked',
+  'not_locked', 'balance_unchanged_before_call',
+  'dx_gt_0', 'dy_gt_0', 'reserveX_ge_dx', 'reserveY_ge_dy', 'lp_ge_amt',
+  'collateral_ge_amt', 'debt_ge_amt', 'healthy_position',
+  'staked_ge_amt', 'rewards_ge_amt',
+  'cross_not_in_progress', 'cross_snapshot_match',
+  'price_ge_min', 'price_valid', 'twap_stale',
+  'timelock_expired',
 ];
 const EFFECTS = [
   'bal_add_amt', 'bal_sub_amt', 'bal_add_amt_to', 'bal_sub_amt_src', 'set_bal_zero',
@@ -11,12 +17,28 @@ const EFFECTS = [
   'shares_add_amt', 'shares_sub_amt', 'total_shares_add_amt', 'total_shares_sub_amt',
   'allowance_sub_amt', 'allowance_set_zero',
   'reentrancy_lock_acquire', 'reentrancy_lock_release', 'external_call',
+  'reserveX_add', 'reserveX_sub', 'reserveY_add', 'reserveY_sub',
+  'lp_mint_amt', 'lp_burn_amt', 'lp_add_amt_to', 'lp_sub_amt_src',
+  'collateral_add', 'collateral_sub', 'debt_add', 'debt_sub',
+  'total_collateral_add', 'total_collateral_sub', 'total_debt_add', 'total_debt_sub',
+  'stake_add', 'stake_sub', 'reward_mint', 'reward_claim',
+  'total_staked_add', 'total_staked_sub',
+  'cross_contract_call', 'cross_contract_return',
+  'price_update', 'oracle_manipulate',
+  'proposal_execute',
 ];
 const INVARIANTS = [
   'nonneg_balance', 'nonneg_shares', 'nonneg_allowance',
   'nonneg_total', 'nonneg_total_shares',
   'solvency', 'shares_integrity', 'backing', 'supply_cap',
   'reentrancy_safe',
+  'nonneg_reserves', 'nonneg_lp', 'constant_product', 'lp_integrity', 'backing_amm',
+  'nonneg_collateral', 'nonneg_debt', 'nonneg_total_collateral', 'nonneg_total_debt',
+  'collateral_integrity', 'debt_integrity', 'overcollateralized', 'lending_solvency',
+  'nonneg_staked', 'nonneg_rewards', 'stake_integrity', 'reward_integrity', 'staking_backing',
+  'cross_contract_safe',
+  'nonneg_price', 'price_stability', 'oracle_integrity',
+  'nonneg_timelock',
 ];
 
 const SYSTEM_PROMPT = `You are a formal-methods abstraction engine for smart contracts.

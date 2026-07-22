@@ -1,24 +1,18 @@
 # <picture><img src="assets/logo.png" height="48" align="left" alt="Counterflow logo"/></picture>Counterflow
 
+[![npm version](https://img.shields.io/npm/v/@kryptosai/counterflow)](https://www.npmjs.com/package/@kryptosai/counterflow)
+[![CI](https://github.com/KryptosAI/counterflow/actions/workflows/ci.yml/badge.svg)](https://github.com/KryptosAI/counterflow/actions/workflows/ci.yml)
+[![license](https://img.shields.io/npm/l/@kryptosai/counterflow)](https://github.com/KryptosAI/counterflow/blob/main/LICENSE)
+[![node >=18](https://img.shields.io/node/v/@kryptosai/counterflow)](https://nodejs.org/)
+
 > **Prove the contract, or reveal the exploit.**
 
-AI-translated, machine-proved smart contract invariant checking — three layers:
+Counterflow is a smart contract security CLI: AI-translated, machine-proved formal verification for Solidity DeFi contracts — English invariants are checked by a trusted Z3/SMT core, backed by symbolic execution (Halmos, Foundry) and Echidna harness generation for invariant testing. 5 model types, 16 benchmark cases across erc20, amm, lending, staking, oracle, and governance, and 5 real DeFi exploits reproduced ($261M+).
 
-1. **Z3 abstract model** — inductive proofs over a fixed vocabulary (allowances, transfers, vault shares, ghost-sum accounting). 6 benchmark exploit classes, all caught.
-2. **Halmos bytecode** — symbolic execution against compiled EVM bytecode, closing the spec-vs-implementation gap.
-3. **LLM translation** — Solidity + English → structured binding (the only untrusted layer; never decides the verdict).
-
-**The LLM never decides the verdict.** A ~350-line, human-auditable Z3 core either *proves*
-the invariant holds for **all** inputs, or produces a **concrete
-counterexample** (an exploit trace). Hallucination is structurally contained:
-a bad translation is caught by deterministic vocabulary validation or produces a wrong
-model — never a false proof of the trusted core's semantics.
+**The LLM never decides the verdict.** A ~560-line human-auditable Z3 core either *proves* the invariant for **all** inputs or produces a **concrete counterexample** (an exploit trace).
 
 ```
 Solidity + English invariants
-        │
-        ▼
-  [Slither extraction]     structural AST pass — function selectors, state vars
         │
         ▼
   [LLM translate]          untrusted — DeepSeek/OpenAI, temperature 0
@@ -27,184 +21,111 @@ Solidity + English invariants
   binding.json             human-reviewable artifact (the real spec)
         │
         ▼
-  [validate]               deterministic vocabulary/schema gate
-        │
-        ├─────────────────────────────────────────┬──────────────────────────┐
-        ▼                                         ▼                          ▼
-  [Z3 inductive check]                   [Halmos bytecode]          [Echidna validation]
-   TRUSTED — abstract model              TRUSTED — EVM symbolic exec  fuzzing harness gen
-        │                                         │                          │
-        ▼                                         ▼                          ▼
-  PROVED | VIOLATED (+ cex)              PASS | FAIL (+ cex calldata)   echidna test file
-        │                                         │                          │
-        └───────────────┬─────────────────────────┴──────────────────────────┘
-                        ▼
-  audit.jsonl            SHA-256 hash-chained, tamper-evident run log
+  [validate]               deterministic vocabulary/schema gate (5 models, 27 guards, 43 effects, 33 invariants)
         │
         ▼
-  [Foundry export]        renderSolidity → handler + invariants .sol files
+  [Z3 inductive check]     TRUSTED — 5 model types: erc20_pool, amm_pool, lending_pool, staking_pool, cross_contract
+        │
+        ▼
+  PROVED | VIOLATED (+ cex)   →   audit.jsonl (SHA-256 hash-chained)
+        │
+        ▼
+  [Halmos bytecode]        TRUSTED — EVM symbolic exec (9 scenarios, 3 PASS / 6 FAIL confirming exploits)
+  [Foundry fuzz+symb]      fuzz → cex → halmos symbolic proof
+  [Echidna validation]     harness generation from binding
+```
+
+## State model (5 types)
+
+| Model | Vocab | Guards | Effects | Invariants |
+|---|---|---|---|---|
+| `erc20_pool` | balances, shares, allowances, totals, ghost sums | 11 | 16 | 10 |
+| `amm_pool` | reserveX/Y, lpSupply, lpBalances, initialK | 5 | 8 | 5 |
+| `lending_pool` | collateral, debt, totals, liqThreshold | 3 | 8 | 8 |
+| `staking_pool` | staked, rewards, totalStaked, rewardPool | 2 | 6 | 5 |
+| `cross_contract` | cross-in-progress flag, snapshots | 2 | 2 | 1 |
+| shared extensions | oracle (price, twap), governance (timelock) | 4 | 3 | 4 |
+
+All models share reentrancy vocabulary (lock/snapshot/external-call). The oracle and governance extensions are shared vocabulary usable across models.
+
+## Installation
+
+```bash
+npm install @kryptosai/counterflow
+# deps: Python 3 + z3-solver (pip install z3-solver)
+# optional: halmos (pip install halmos), Foundry (brew install foundry)
+counterflow doctor   # check all deps
 ```
 
 ## Quickstart
 
 ```bash
-# —— deterministic (no LLM needed) ——
-node src/cli.js check examples/TokenPool.binding.json           # PROVED
-node src/cli.js check examples/TokenPoolBuggy.binding.json      # VIOLATED + exploit
-
-# —— full AI pipeline (needs DEEPSEEK_API_KEY or OPENAI_API_KEY) ——
-node src/cli.js verify examples/TokenPoolBuggy.sol examples/invariants.txt
-
-# —— two-step, human-in-the-loop (recommended) ——
-node src/cli.js extract examples/TokenPool.sol examples/invariants.txt -o binding.json
-# review binding.json ...
-node src/cli.js check binding.json
-
-# —— bytecode-level (needs foundry + halmos) ——
-pip install z3-solver halmos    # or use project .venv
-node src/cli.js bytecode HalmosTest
-
-# —— everything ——
-npm run all
-
-# —— audit chain ——
-node src/cli.js audit
+counterflow check examples/TokenPool.binding.json      # PROVED
+counterflow check examples/TokenPoolBuggy.binding.json # VIOLATED + exploit
+counterflow verify Contract.sol invariants.txt         # full AI pipeline (needs API key)
+counterflow check binding.json                         # deterministic, no LLM
+counterflow bytecode HalmosTest                        # 9 EVM symbolic tests
+counterflow audit                                      # verify SHA-256 chain
 ```
-
-Requires Node >= 18, Python 3 with `z3-solver` and `halmos`, and [Foundry](https://getfoundry.sh/) (`brew install foundry`). Set `COUNTERFLOW_PYTHON` to a venv python if needed.
-
-## Audit Binding
-
-```bash
-# —— audit-binding: review & compare binding snapshots ——
-node src/cli.js audit-binding binding.json       # show binding structure & validation
-node src/cli.js audit-binding a.json b.json      # diff two bindings side-by-side
-```
-
-Audit-binding loads one or two binding files and produces a human-readable summary:
-- Validates the binding vocabulary and schema
-- Lists all functions, guards, effects, and invariants
-- When given two bindings, computes a structural diff showing added/removed/changed
-  functions, guards, effects, and invariants
-- Useful in CI to detect unintended binding drift across revisions
-
-## Export
-
-```bash
-# —— generate Echidna fuzzing harness ——
-node src/cli.js gen-echidna binding.json > EchidnaTest.sol
-# produces: contract EchidnaBindingTest with echidna_ prefixed properties
-
-# —— generate Foundry invariant test files ——
-node src/cli.js gen-foundry binding.json -o foundry-tests/
-# produces: handler .sol + invariants .sol with function invariant_ stubs
-```
-
-Export commands generate derivative artifacts from a binding:
-- **Echidna**: produces a standalone Solidity file with `echidna_`-prefixed property
-  functions ready for `echidna-test`. Each invariant becomes an Echidna property.
-- **Foundry**: produces `{Model}Handler.sol` (actor management) and
-  `{Model}Invariants.sol` (per-invariant `function invariant_*` stubs) for use
-  with `forge test` invariant testing.
-
-## DeFiHackLabs Benchmark
-
-The defihack runner executes Counterflow against the
-[DeFiHackLabs](https://github.com/SunWeb3Sec/DeFiHackLabs) exploit corpus:
-
-```bash
-node bench/defihack.js                    # run all cases
-node bench/defihack.js --case cream-finance  # single case
-```
-
-Each case:
-1. Loads the Solidity source and English invariants from the corpus
-2. Runs LLM translation → binding validation → Z3 proof
-3. Compares the verdict against the known exploit label
-4. Produces a per-case report (contract, invariants, verdict, counterexample)
-
-This validates that the pipeline catches real-world DeFi exploits, not just
-synthetic examples. Current coverage includes CREAM Finance, Hundred Finance,
-and other high-profile incidents.
 
 ## Benchmark
 
 ```
-npm run bench
-# or: npm run all  (includes e2e tests + bytecode check)
+16/16 solver cases correct (110-320ms per case):
+  erc20_pool: TokenPool†, SafeVault†, TokenPoolBuggy✗, ApprovalDrain✗, UnbackedMintVault✗, BurnDesyncVault✗
+  amm_pool:   AMMSwap†, AMMPriceManipulation✗
+  lending:    LendingPool†, LendingUnbackedBorrow✗
+  staking:    StakingPool†, StakingInfiniteReward✗
+  oracle:     OracleSafe†, OracleManipulation✗
+  governance: GovernanceTimelock†, GovernanceNoTimelock✗
 
-6/6 cases correct:
+5/5 DeFiHackLabs real exploits reproduced (deterministic, no LLM):
+  FEI Protocol      ($80M)  reentrancy        → reentrancy_safe violated
+  CREAM Finance     ($130M) ERC777 reentrancy  → nonneg_balance violated
+  PancakeBunny      ($45M)  flash loan         → backing violated
+  OpenLeverage      ($230K) access control     → backing violated
+  Belt Finance      ($6.3M) arithmetic         → solvency violated
 
-  TokenPool (safe)                        PROVED      [reference]
-  TokenPoolBuggy (missing balance check)  VIOLATED    [underflow-drain]
-  SafeVault (safe)                        PROVED      [reference]
-  ApprovalDrain (transferFrom no check)   VIOLATED    [approval-drain]
-  UnbackedMintVault (owner infinite mint) VIOLATED    [unbacked-mint]
-  BurnDesyncVault (totalShares desync)    VIOLATED    [accounting-desync]
-
-Bytecode: Halmos symbolic test
-  ✓ TokenPool withdraw no underflow       PASS
-  ✗ TokenPoolBuggy withdraw no underflow  FAIL (amt > pre counterexample)
+3/3 ValuePacket contracts PROVED at pool level
+26/26 e2e tests pass
 ```
 
-## State model (v2)
+## How it works
 
-| Vocabulary | Covers |
-|---|---|
-| `balances[a]`, `shares[a]`, `allowances[a]` | ERC20 + ERC4626 + approvals |
-| `totalAssets`, `totalShares` | pool totals |
-| ghost sums: `sumBalances`, `sumShares` | exact accounting integrity |
-| 9 invariants | nonneg_balance/shares/allowance/total/total_shares, solvency, shares_integrity, backing, supply_cap |
-| 9 guards, 13 effects | deposit/withdraw/mint/burn/transfer/transferFrom/approve |
+1. You write invariants in English or Solidity comments
+2. LLM translates contract + invariants → structured binding JSON (untrusted layer)
+3. Deterministic Z3 core proves or produces a counterexample (trusted layer)
+4. Optional Halmos bytecode backstop closes spec-vs-implementation gap
+5. SHA-256 hash-chained audit log records every run
 
-### Reentrancy
+## Counterflow vs the landscape
 
-The reentrancy vocabulary models the standard check-effects-interaction pattern
-with a reentrancy lock:
+| | Counterflow | Certora Prover | Kontrol | Halmos |
+|---|---|---|---|---|
+| Licence | MIT | GPL-3.0 | BSD-3 | AGPL-3.0 |
+| Input | English | CVL spec | Foundry tests | Foundry tests |
+| Proof level | Z3 abstract | SMT | KEVM bytecode | Symbolic |
+| Multi-contract | Yes (cross_contract model + Halmos) | Yes (scene linking) | Yes | Yes |
+| Model types | 5 (extensible) | Unlimited | Unlimited | N/A |
+| Bytecode backstop | Halmos + Foundry | No | Native | Native |
+| Audit chain | SHA-256 | Cloud | No | No |
+| Setup | npm + Python | Java + Gradle | K + Nix | pip |
 
-| Vocabulary | Covers |
-|---|---|
-| guard `not_locked` | `require(!locked)` — the function's reentrancy lock is free |
-| effect `reentrancy_lock_acquire` | `locked = true` |
-| effect `reentrancy_lock_release` | `locked = false` |
-| effect `external_call` | marker for an external call — snapshots state for reentrancy checks |
-| invariant `reentrancy_safe` | if in external call, storage (total, sumBalances) has not changed since the snapshot |
+## What a verdict means
 
-A properly modeled withdraw with reentrancy:
+- **PROVED** — the modeled transition preserves the invariant for *all* possible inputs
+- **VIOLATED** — Z3 or Halmos found a concrete counterexample (exploit trace)
+- **UNKNOWN** — solver could not decide within limits
+- **VACUOUS** — (per-function flag) the function's guards are unsatisfiable, so its proofs are vacuous; review the binding
 
-```json
-{
-  "name": "withdraw",
-  "guards": ["amt_gt_0", "bal_ge_amt", "not_locked"],
-  "effects": ["reentrancy_lock_acquire", "bal_sub_amt", "total_sub_amt",
-              "external_call", "reentrancy_lock_release"]
-}
-```
+## Open core (MIT)
 
-The Z3 core tracks per-function locks, an `in_call` flag, and storage snapshots
-taken at the `external_call` point. The `reentrancy_safe` invariant is violated if
-any state variable changes between the snapshot and the end of the call — catching
-cross-function reentrancy even when locks appear to be used.
-
-## What a verdict means (read this)
-
-- **PROVED** — the modeled transition preserves the invariant for *all*
-  possible inputs and states (an inductive proof over the reviewed binding).
-  It is **not** a claim that the contract is "safe": the binding is an
-  abstraction and must be reviewed; bytecode verification closes the gap.
-- **VIOLATED** — Z3 or Halmos found a concrete counterexample.
-- **UNKNOWN** — the solver could not decide within limits. Nothing is claimed.
-
-## Open core
-
-MIT-licensed: CLI, translation prompts, validation, the trusted Z3 core,
-Halmos symbolic tests, and example bindings. Commercial layer (separate):
-hosted pipeline, CI integration, dashboards, proof storage, multi-contract
-projects.
+CLI, translation prompts, validation, trusted Z3 core, Halmos tests, benchmark bindings, DeFiHackLabs corpus, defi hack runner, ValuePacket verification suite. Commercial layer (separate): hosted pipeline, CI integration, dashboards, proof storage.
 
 ## Roadmap
 
-- CVL export for Certora interop
-- Richer state model: reentrancy flags, compound interest/accrual
-- L2/bridge message verification targets
-- Public leaderboard of verified contracts
+- Kontrol integration as second bytecode backstop
+- CVL export for Certora Prover interop
+- Richer Z3 models: compound interest
+- VS Code extension with inline binding review
+- Public leaderboard on GitHub Pages

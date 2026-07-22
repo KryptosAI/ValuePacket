@@ -40,21 +40,34 @@ USAGE
   counterflow gen-echidna   <binding.json> [--contract-name Name] [--output-dir path]
   counterflow gen-foundry   <binding.json> [--contract-name Name] [--output-dir path]
   counterflow fuzz-symb     <ContractName> [--test TestGlob]
+  counterflow export-cvl    <binding.json> [-o output.spec]
+  counterflow kontrol       <TestContract> [--test TestGlob]
+  counterflow doctor
+  counterflow leaderboard   [--json] [--markdown]
+  counterflow badge         [label] [-o badge.svg]
+  counterflow serve         [--port 3000]
+  counterflow completeness  <Contract.sol> [--binding binding.json] [--json]
+  counterflow mutate        <binding.json> [--json] [--max 50]
 
 COMMANDS
   verify         Full pipeline: LLM translation -> validation -> sound Z3 verdict.
-                 Pass --binding to skip the LLM and use a human-reviewed binding.
-  extract        LLM translation only. Writes the binding JSON for human review.
-  check          Deterministic verification of a reviewed binding (no LLM, no network).
-  bytecode       Halmos symbolic execution against EVM bytecode (closes the
-                 spec-vs-implementation gap). Run '*' for all tests.
-  bench          Run all benchmark cases (binding models + halmos bytecode + defihack).
+  extract        LLM translation only.
+  check          Deterministic verification of a reviewed binding (no LLM).
+  bytecode       Halmos symbolic execution against EVM bytecode.
+  bench          Run all benchmark + defihack cases.
   audit          Verify the tamper-evident audit chain.
-  audit-binding  Cross-validate an LLM binding against Slither AST extraction.
-                 Pass --binding to diff against an existing binding.
-  gen-echidna    Generate an Echidna fuzzing test contract + config from a binding.
-  gen-foundry    Generate Foundry invariant test files (handler + invariants) from a binding.
-  fuzz-symb      Run Foundry fuzz, promote counterexamples to Halmos symbolic execution.
+  audit-binding  Cross-validate binding against Slither AST extraction.
+  gen-echidna    Generate an Echidna fuzzing test contract from a binding.
+  gen-foundry    Generate Foundry invariant test files from a binding.
+  fuzz-symb      Run Foundry fuzz, promote counterexamples to Halmos.
+  export-cvl     Generate a Certora Verification Language (CVL) .spec file from a binding.
+  kontrol        Run K-framework Kontrol proofs on a Halmos test contract.
+  doctor         Check all dependencies (node, python, z3, halmos, forge, solc, git).
+  leaderboard    Print verified contract leaderboard (text, json, or markdown).
+  badge          Generate shields.io-style SVG badge from audit log.
+  serve          Start HTTP dashboard server with badge endpoint.
+  completeness   Cross-reference binding against Slither storage enumeration.
+  mutate         Run mutation tests — drop guards/effects, check if caught.
 
 WHAT A VERDICT MEANS
   PROVED    = the modeled transition preserves the invariant for ALL inputs
@@ -71,6 +84,13 @@ function arg(flag) {
 async function main() {
   const cmd = process.argv[2];
   const json = process.argv.includes('--json');
+
+  if (cmd === '--version' || cmd === '-v') {
+    const pkg = require('../package.json');
+    console.log(pkg.version);
+    process.exit(0);
+  }
+  if (cmd === '--help' || cmd === '-h') { console.log(USAGE); process.exit(0); }
 
   if (cmd === 'verify') {
     const contractPath = process.argv[3];
@@ -297,6 +317,234 @@ async function main() {
 
     if (json) console.log(JSON.stringify(results, null, 2));
     process.exit(results.fuzzResults.failures > 0 ? 3 : 0);
+  }
+
+  if (cmd === 'export-cvl') {
+    const bindingPath = process.argv[3];
+    if (!bindingPath) { console.log(USAGE); process.exit(1); }
+    const out = arg('-o') || bindingPath.replace(/\.json$/, '.spec');
+    const cvl = require('./cvl-export');
+    const result = cvl.exportCvl(path.resolve(bindingPath));
+    if (!result.ok) {
+      console.error(`${C.red}CVL export failed:${C.reset} ${result.error}`);
+      process.exit(2);
+    }
+    fs.writeFileSync(out, result.cvl);
+    console.log(`${C.green}CVL spec written to ${out}${C.reset}`);
+    console.log(`${C.dim}Model: ${result.model}${C.reset}`);
+    process.exit(0);
+  }
+
+  if (cmd === 'kontrol') {
+    const { spawnSync } = require('child_process');
+    const testContract = process.argv[3];
+    if (!testContract) { console.log(USAGE); process.exit(1); }
+    const testGlob = arg('--test') || '*';
+
+    const { checkKontrol, runKontrol } = require('./kontrol-runner');
+    const kc = checkKontrol();
+    if (!kc.installed) {
+      console.log(`${C.red}kontrol not installed.${C.reset}`);
+      console.log(`${C.dim}Kontrol requires the K framework.${C.reset}`);
+      console.log(`${C.dim}See https://github.com/runtimeverification/k for installation.${C.reset}`);
+      process.exit(2);
+    }
+
+    console.log(`${C.bold}Kontrol — ${testContract}${C.reset}`);
+    console.log(`${C.dim}Version: ${kc.version}${C.reset}`);
+
+    const results = runKontrol(testContract, { testGlob });
+    if (!results.ok && results.error) {
+      console.log(`${C.red}Kontrol error:${C.reset} ${results.error}`);
+      process.exit(2);
+    }
+
+    if (results.summary.total === 0) {
+      console.log(`${C.yellow}No test results found. Ensure your .t.sol file is in the current directory.${C.reset}`);
+    } else {
+      console.log(`\n${C.bold}Results:${C.reset}`);
+      console.log(`  Total:  ${results.summary.total}`);
+      console.log(`  Passed: ${C.green}${results.summary.passed}${C.reset}`);
+      console.log(`  Failed: ${results.summary.failed > 0 ? C.red : C.reset}${results.summary.failed}${C.reset}`);
+      for (const t of results.tests) {
+        const mark = t.status === 'passed' ? `${C.green}✓${C.reset}` : `${C.red}✗${C.reset}`;
+        console.log(`  ${mark} ${t.test}`);
+      }
+    }
+
+    if (json) console.log(JSON.stringify(results, null, 2));
+    process.exit(results.summary.failed > 0 ? 3 : 0);
+  }
+
+  if (cmd === 'doctor') {
+    const { spawnSync } = require('child_process');
+    console.log(`${C.bold}Counterflow Doctor${C.reset}\n`);
+    const venvDir = path.join(__dirname, '..', '.venv', 'bin');
+    const venvHalmos = path.join(venvDir, 'halmos');
+    const checks = [
+      ['node', 'node -v', (o) => o.trim()],
+      ['npm', 'npm -v', (o) => o.trim()],
+      ['python3', `"${pickPython() || 'python3'}" --version`, (o) => o.trim()],
+      ['z3-solver', `"${pickPython() || 'python3'}" -c "import z3; print(z3.get_version_string())"`, (o) => o.trim()],
+      ['halmos (venv)', fs.existsSync(venvHalmos) ? `"${venvHalmos}" --version` : 'halmos --version', (o) => o.trim()],
+      ['forge', 'forge --version', (o) => o.split('\n')[0]?.trim()],
+      ['solc', 'solc --version', (o) => o.split('\n')[0]?.trim()],
+      ['git', 'git --version', (o) => o.trim()],
+      ['counterflow', 'node "' + path.join(__dirname, 'cli.js') + '" --version', (o) => 'v' + o.trim()],
+    ];
+    let ok = true;
+    for (const [name, cmdStr, parse] of checks) {
+      const r = spawnSync('bash', ['-c', cmdStr], { encoding: 'utf-8', timeout: 5000 });
+      if (r.status === 0 && r.stdout.trim()) {
+        console.log(`  ${C.green}✓${C.reset} ${name} ${C.dim}${parse(r.stdout)}${C.reset}`);
+      } else {
+        console.log(`  ${C.red}✗${C.reset} ${name} ${C.dim}(not found)${C.reset}`);
+        ok = false;
+      }
+    }
+    const venvPy = path.join(venvDir, 'python');
+    if (require('fs').existsSync(venvPy)) {
+      console.log(`  ${C.green}✓${C.reset} venv ${C.dim}${venvPy}${C.reset}`);
+    }
+    if (!ok) console.log(`\n${C.yellow}Some dependencies missing. See install instructions in README.md.${C.reset}`);
+    process.exit(ok ? 0 : 2);
+  }
+
+  if (cmd === 'leaderboard') {
+    const { leaderboardData, renderText, renderMarkdown } = require('./leaderboard');
+    const data = leaderboardData();
+    if (process.argv.includes('--markdown')) {
+      console.log(renderMarkdown(data));
+    } else if (json) {
+      console.log(JSON.stringify(data, null, 2));
+    } else {
+      console.log(renderText(data));
+    }
+    process.exit(0);
+  }
+
+  if (cmd === 'badge') {
+    const { badgeSvg } = require('./badge');
+    const label = process.argv[3] || 'counterflow';
+    const out = arg('-o') || 'badge.svg';
+    const outDir = path.dirname(path.resolve(out));
+    if (!fs.existsSync(outDir)) {
+      console.error(`${C.red}output directory does not exist: ${outDir}${C.reset}`);
+      process.exit(2);
+    }
+    const svg = badgeSvg(label);
+    try {
+      fs.writeFileSync(out, svg);
+    } catch (e) {
+      console.error(`${C.red}could not write badge to ${out}: ${e.message}${C.reset}`);
+      process.exit(2);
+    }
+    console.log(`${C.green}Badge written to ${out}${C.reset}`);
+    process.exit(0);
+  }
+
+  if (cmd === 'serve') {
+    const http = require('http');
+    const { dashboardHtml } = require('./dashboard');
+    const { badgeSvg } = require('./badge');
+    const port = parseInt(arg('--port') || '3000', 10);
+
+    const server = http.createServer((req, res) => {
+      if (req.url === '/badge.svg') {
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+        res.end(badgeSvg('counterflow'));
+      } else if (req.url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok' }));
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(dashboardHtml());
+      }
+    });
+
+    const shutdown = (signal) => {
+      console.log(`\n${C.yellow}Received ${signal}, shutting down...${C.reset}`);
+      server.close(() => {
+        console.log(`${C.green}Server stopped.${C.reset}`);
+        process.exit(0);
+      });
+      setTimeout(() => {
+        console.log(`${C.red}Forced shutdown.${C.reset}`);
+        process.exit(1);
+      }, 5000);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+
+    server.listen(port, () => {
+      console.log(`${C.green}Dashboard:${C.reset} http://localhost:${port}`);
+      console.log(`${C.green}Badge:${C.reset}    http://localhost:${port}/badge.svg`);
+      console.log(`\n${C.dim}Press Ctrl+C to stop${C.reset}`);
+    });
+    return; // don't exit — server keeps running
+  }
+
+  if (cmd === 'completeness') {
+    const { spawnSync } = require('child_process');
+    const contractPath = process.argv[3];
+    if (!contractPath) { console.log(USAGE); process.exit(1); }
+    const { checkCompleteness } = require('./completeness');
+    const bindingPath = arg('--binding');
+    let binding = {};
+    if (bindingPath) {
+      try { binding = JSON.parse(fs.readFileSync(bindingPath, 'utf-8')); }
+      catch { console.error(`${C.red}could not read binding${C.reset}`); process.exit(2); }
+    }
+    const slitherBin = path.join(__dirname, '..', '.venv', 'bin', 'slither');
+    const hasSlither = fs.existsSync(slitherBin);
+    if (!hasSlither) {
+      const pathSlither = spawnSync('slither', ['--version'], { encoding: 'utf-8' }).status === 0;
+      if (!pathSlither) {
+        console.error(`${C.red}slither not installed. Install: pip install slither-analyzer${C.reset}`);
+        process.exit(2);
+      }
+    }
+    const python = pickPython();
+    if (!python) { console.error(`${C.red}No Python with z3 available${C.reset}`); process.exit(2); }
+    const result = checkCompleteness(path.resolve(contractPath), binding, python);
+    if (!result.ok) { console.error(`${C.red}${result.error}${C.reset}`); process.exit(2); }
+    if (json) {
+      console.log(JSON.stringify(result.result, null, 2));
+    } else {
+      const a = result.result;
+      const mark = a.scoreLabel === 'PASS' ? `${C.green}✓ PASS${C.reset}` : a.scoreLabel === 'WARN' ? `${C.yellow}⚠ WARN${C.reset}` : `${C.red}✗ FAIL${C.reset}`;
+      console.log(`\n${C.bold}Binding Completeness Report${C.reset} — ${contractPath}`);
+      console.log(`  ${mark}  Completeness score: ${a.score}% (${a.covered}/${a.totalTracked} tracked variables covered)\n`);
+      if (a.warnings.length > 0) {
+        for (const w of a.warnings) console.log(`  ${C.yellow}⚠${C.reset} ${w}`);
+      }
+    }
+    process.exit(result.result.scoreLabel === 'FAIL' ? 3 : 0);
+  }
+
+  if (cmd === 'mutate') {
+    const bindingPath = process.argv[3];
+    if (!bindingPath) { console.log(USAGE); process.exit(1); }
+    const binding = JSON.parse(fs.readFileSync(bindingPath, 'utf-8'));
+    const { runMutations } = require('./mutate');
+    const maxArg = arg('--max');
+    const max = maxArg != null ? parseInt(maxArg, 10) || 0 : 50;
+    const report = runMutations(binding, { max });
+    if (json) {
+      console.log(JSON.stringify(report, null, 2));
+    } else {
+      console.log(`\n${C.bold}Mutation Test Report${C.reset}`);
+      console.log(`  Base verdict: ${report.baseVerdict}`);
+      console.log(`  Mutations: ${report.totalMutations} (${report.caught} caught, ${report.missed} missed)`);
+      console.log(`  Mutation score: ${report.score}%\n`);
+      for (const r of report.results.slice(0, 10)) {
+        const mark = r.caught ? `${C.green}✓${C.reset}` : `${C.red}✗${C.reset}`;
+        console.log(`  ${mark} [${r.function}] ${r.detail}`);
+      }
+      if (report.results.length > 10) console.log(`  ${C.dim}... and ${report.results.length - 10} more${C.reset}`);
+    }
+    process.exit(report.missed > 0 ? 3 : 0);
   }
 
   console.log(USAGE);

@@ -1,6 +1,8 @@
 const { GUARDS, EFFECTS, INVARIANTS } = require('./translate');
 
-const KNOWN_MODELS = ['erc20_pool'];
+const KNOWN_MODELS = [
+  'erc20_pool', 'amm_pool', 'lending_pool', 'staking_pool', 'cross_contract',
+];
 
 function validateBinding(binding) {
   const errors = [];

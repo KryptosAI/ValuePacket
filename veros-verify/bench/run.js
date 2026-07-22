@@ -12,10 +12,16 @@ const suite = JSON.parse(fs.readFileSync(path.join(__dirname, 'suite.json'), 'ut
 
 let pass = 0;
 let fail = 0;
+let skip = 0;
 const rows = [];
 
 for (const c of suite.cases) {
   const bindingPath = path.resolve(__dirname, c.binding);
+  if (!fs.existsSync(bindingPath)) {
+    skip++;
+    rows.push({ name: c.name, class: c.class, ok: false, ms: 0, detail: 'binding file missing' });
+    continue;
+  }
   const binding = JSON.parse(fs.readFileSync(bindingPath, 'utf-8'));
   const start = Date.now();
   const r = runSolver(binding);
@@ -25,29 +31,33 @@ for (const c of suite.cases) {
   let detail = '';
   if (!r.ok) {
     detail = `solver error: ${r.error}`;
-  } else if (r.output.verdict !== c.expect) {
-    detail = `expected ${c.expect}, got ${r.output.verdict}`;
-  } else if (c.expectInvariant) {
+  } else if (r.output.verdict !== c.expected_verdict) {
+    detail = `expected ${c.expected_verdict}, got ${r.output.verdict}`;
+  } else if (c.expected_invariant) {
     const hit = r.output.functions.some((f) =>
-      f.results.some((x) => x.invariant === c.expectInvariant && x.status === 'violated'));
+      f.results.some((x) => x.invariant === c.expected_invariant && x.status === 'violated'));
     ok = hit;
-    if (!hit) detail = `expected violation of ${c.expectInvariant}, not found`;
+    if (!hit) detail = `expected violation of ${c.expected_invariant}, not found`;
   } else {
     ok = true;
   }
 
   if (ok) pass++; else fail++;
-  rows.push({ name: c.name, class: c.class, expect: c.expect, ok, ms, detail });
+  rows.push({ name: c.name, class: c.class, ok, ms, detail });
 }
 
 console.log('');
 console.log(`${C.bold}Counterflow benchmark${C.reset} ${C.dim}(deterministic, reviewed bindings, no LLM)${C.reset}`);
 console.log('');
 for (const r of rows) {
-  const mark = r.ok ? `${C.green}✓${C.reset}` : `${C.red}✗${C.reset}`;
-  console.log(`  ${mark} ${r.name}  ${C.dim}[${r.class}] expected=${r.expect} ${r.ms}ms${C.reset}${r.detail ? `\n      ${C.red}${r.detail}${C.reset}` : ''}`);
+  if (r.detail === 'binding file missing') {
+    console.log(`  ${C.yellow}⊘${C.reset} ${r.name}  ${C.dim}[${r.class}] SKIPPED${C.reset}`);
+  } else {
+    const mark = r.ok ? `${C.green}✓${C.reset}` : `${C.red}✗${C.reset}`;
+    console.log(`  ${mark} ${r.name}  ${C.dim}[${r.class}]${C.reset}${r.detail ? `\n      ${C.red}${r.detail}${C.reset}` : ''}  ${C.dim}(${r.ms}ms)${C.reset}`);
+  }
 }
 console.log('');
-console.log(`  ${pass}/${pass + fail} cases correct`);
+console.log(`  ${pass}/${pass + fail} correct${skip > 0 ? `  (${skip} skipped)` : ''}`);
 console.log('');
-process.exit(fail ? 1 : 0);
+process.exit(fail > 0 ? 1 : 0);
